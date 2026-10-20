@@ -122,12 +122,41 @@
   const ASSAY_SHORT = { structural: "struct", direct_binding: "binding",
                         functional_in_vitro: "in vitro", functional_in_vivo: "in vivo",
                         computational: "in silico" };
+  /* Non-literature evidence classes (CITATION_METHODS.md Methods 3, 4). A
+     nomenclature_evident pair ranks ABOVE literature evidence (owner decision
+     2026-10-15); database_annotated ranks below it. */
+  const CLS_LABEL = { nomenclature_evident: "name-evident", database_annotated: "database" };
+  const CLS_TITLE = {
+    nomenclature_evident: "The receptor's official HGNC name contains this molecule's own name (exact name only, no class matching). High confidence without a citation.",
+    database_annotated: "A curated protein database annotates this molecule with this protein and cites a paper; no sentence from that paper has been verified yet."
+  };
+  function clsBadges(id) {
+    const cl = (window.CLASSEV || {})[id] || [];
+    return [...new Set(cl.map(c => c.cls))].sort((a, b) => a === "nomenclature_evident" ? -1 : 1)
+      .map(k => `<span class="badge ${k === "nomenclature_evident" ? "b-verified" : "b-unverified"}" title="${esc(CLS_TITLE[k] || "")}">${esc(CLS_LABEL[k] || k)}</span>`).join("");
+  }
+  function classPanel(id) {
+    const cl = (window.CLASSEV || {})[id] || [];
+    if (!cl.length) return "";
+    const order = c => c.cls === "nomenclature_evident" ? 0 : 1;
+    return `<h3 style="margin:22px 0 8px;font-size:15px">Evidence class</h3>` +
+      cl.slice().sort((a, b) => order(a) - order(b)).map(c => `<div class="ev confirmed">
+        <div class="top">
+          <span class="badge ${c.cls === "nomenclature_evident" ? "b-verified" : "b-unverified"}" title="${esc(CLS_TITLE[c.cls] || "")}">${esc(CLS_LABEL[c.cls] || c.cls)}</span>
+          <span class="chip">${esc(c.conf)} confidence</span>
+          <span class="chip">${esc(c.src)}</span>
+          ${c.pmid ? `<span style="margin-left:auto">${pmidLinks(c.pmid)}</span>` : ""}
+        </div>
+        <div class="title" style="color:var(--muted);margin-top:6px">${esc(c.det)}</div>
+      </div>`).join("");
+  }
   function evCell(id) {
     const ev = (window.EVIDENCE || {})[id] || [];
-    if (!ev.length) return '<span class="unassessed" title="No primary paper has been read for this pair">none</span>';
+    const cb = clsBadges(id);
+    if (!ev.length) return cb || '<span class="unassessed" title="No primary paper has been read for this pair">none</span>';
     const res = [...new Set(ev.map(e => e.res).filter(Boolean))];
     const ref = res.includes("REFUTES");
-    return `<span class="badge b-verified" title="${ev.length} primary paper${ev.length === 1 ? "" : "s"} read; quoted sentence verified against the paper's own text">${ev.length} paper${ev.length === 1 ? "" : "s"}</span>` +
+    return cb + `<span class="badge b-verified" title="${ev.length} primary paper${ev.length === 1 ? "" : "s"} read; quoted sentence verified against the paper's own text">${ev.length} paper${ev.length === 1 ? "" : "s"}</span>` +
       res.map(k => `<span class="chip"${ref && k === "REFUTES" ? ' style="color:#8a2b2b;border-color:#e0a0a0"' : ""}>${esc(RES_SHORT[k] || k.toLowerCase())}</span>`).join("");
   }
   function assayCell(id) {
@@ -267,6 +296,7 @@
         <h3 style="margin:0 0 6px;font-size:15px">Related genes for the ligand (${esc(r[2])})</h3>
         ${enzPanel(r[1])}
 
+        ${classPanel(id)}
         ${evidencePanel(id)}
 
         <h3 style="margin:22px 0 8px;font-size:15px">Reported by</h3>
@@ -493,7 +523,7 @@
   document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
     document.querySelectorAll("nav button").forEach(x => x.classList.remove("on"));
     b.classList.add("on");
-    ["browse", "chems", "stats", "methods"].forEach(t =>
+    ["browse", "chems", "stats", "methods", "usage"].forEach(t =>
       document.getElementById("tab-" + t).classList.toggle("hide", t !== b.dataset.tab));
     if (b.dataset.tab === "chems" && !cview.length) capply();
   });
