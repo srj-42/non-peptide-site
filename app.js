@@ -44,6 +44,52 @@
       `</span>`;
   }
 
+  /* ---------------- complexes as single entries ----------------
+     Decision 2026-10-19: a complex that the SOURCE databases mark (complex_id) is one
+     entry per chemical, not one row per subunit. Only source-marked complexes are merged;
+     our own family groupings are NOT (they were never reviewed). The merge happens here,
+     at load time, so the exported CSVs and the database keep one row per subunit.
+     A merged row keeps the shape of the others and adds  9 member ids, 10 member symbols. */
+  (function collapseComplexes() {
+    const groups = new Map();
+    I.forEach(r => {
+      if (!r[8]) return;
+      const k = r[1] + "|" + r[8];
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(r);
+    });
+    if (!groups.size) return;
+    const label = id => id.split(/[;_]/).filter(Boolean).join(" + ");
+    const merge = (list, pick, keyf) => {
+      const seen = new Set(), out = [];
+      list.forEach(x => { const k = keyf(x); if (!seen.has(k)) { seen.add(k); out.push(x); } });
+      return out;
+    };
+    const drop = new Set(), made = [];
+    groups.forEach(rows => {
+      rows.sort((a, b) => a[0] < b[0] ? -1 : 1);
+      const first = rows[0], ids = rows.map(r => r[0]);
+      const types = rows.map(r => r[4]).filter(Boolean);
+      const m = [
+        first[0], first[1], first[2], label(first[8]),
+        types[0] || "",
+        Math.max(...rows.map(r => r[5])),
+        [...new Set(rows.flatMap(r => [...String(r[6])]))].sort().join(""),
+        Math.max(...rows.map(r => r[7])),
+        first[8], ids, rows.map(r => r[3])
+      ];
+      rows.forEach(r => drop.add(r));
+      made.push(m);
+      ["EVIDENCE", "CLASSEV"].forEach(name => {
+        const store = window[name]; if (!store) return;
+        const all = ids.flatMap(i => store[i] || []);
+        if (all.length) store[first[0]] = merge(all, null, e => JSON.stringify([e.pmid, e.sent || e.det, e.cls]));
+      });
+    });
+    const kept = I.filter(r => !drop.has(r));
+    I.splice(0, I.length, ...kept, ...made);
+  })();
+
   /* ---------------- filters + table ---------------- */
   let sortCol = 5, sortAsc = false, page = 0, view = I;
 
@@ -54,7 +100,7 @@
     const ms = +document.getElementById("minsrc").value;
     const only = document.getElementById("only").value;
     view = I.filter(r => {
-      if (q && !(r[2].toLowerCase().includes(q) || r[3].toLowerCase().includes(q))) return false;
+      if (q && !(r[2].toLowerCase().includes(q) || r[3].toLowerCase().includes(q) || (r[10] || []).some(g => g.toLowerCase().includes(q)))) return false;
       if (mc && (C[r[1]] || {}).mc !== mc) return false;
       if (rt && r[4] !== rt) return false;
       if (r[5] < ms) return false;
@@ -81,7 +127,7 @@
     if (page >= pages) page = pages - 1;
     const slice = view.slice(page * PAGE, page * PAGE + PAGE);
     document.getElementById("count").textContent =
-      `${n.toLocaleString()} pair${n === 1 ? "" : "s"} of ${I.length.toLocaleString()}`;
+      `${n.toLocaleString()} pair${n === 1 ? "" : "s"} of ${I.length.toLocaleString()} (a complex the sources mark counts as one)`;
     document.getElementById("rows").innerHTML = slice.map(r => {
       const ch = C[r[1]] || {}, ez = E[r[1]] || [];
       return `<tr data-id="${esc(r[0])}">
@@ -105,12 +151,16 @@
   const shardOf = id => { let s = 0; for (const c of id) s += c.charCodeAt(0); return s % SHARDS; };
   const loaded = {};
   function needShard(id, cb) {
-    const s = shardOf(id);
-    if (loaded[s]) return cb();
-    const el = document.createElement("script");
-    el.src = `data/prov/p${s}.js`;
-    el.onload = el.onerror = () => { loaded[s] = 1; cb(); };
-    document.head.appendChild(el);
+    const ids = Array.isArray(id) ? id : [id];
+    const todo = [...new Set(ids.map(shardOf))].filter(s => !loaded[s]);
+    if (!todo.length) return cb();
+    let left = todo.length;
+    todo.forEach(s => {
+      const el = document.createElement("script");
+      el.src = `data/prov/p${s}.js`;
+      el.onload = el.onerror = () => { loaded[s] = 1; if (--left === 0) cb(); };
+      document.head.appendChild(el);
+    });
   }
 
 
@@ -233,11 +283,13 @@
   }
 
   function openDetail(id) {
-    needShard(id, () => {
-      const r = I.find(x => x[0] === id);
+    const row0 = I.find(x => x[0] === id);
+    const members = (row0 && row0[9]) || [id];
+    needShard(members, () => {
+      const r = row0;
       if (!r) return;
       const ch = C[r[1]] || {};
-      const prov = (window.__PROV[shardOf(id)] || {})[id] || [];
+      const prov = members.flatMap(m => (window.__PROV[shardOf(m)] || {})[m] || []);
       /* One line: which databases report this pair, and the PMIDs they cite between
          them. The per-source rows with the upstream spelling stay underneath in a
          disclosure, because the Methods tab promises that traceability. */
@@ -276,7 +328,9 @@
         <button class="close">Close</button>
         <h2>${esc(r[2])} <span class="arrow">&rarr;</span> ${esc(r[3])}</h2>
         <div style="color:var(--muted);font-size:13px">
-          ${esc(r[4] || "receptor type unrecorded")}${r[8] ? ` · subunit of <code>${esc(r[8])}</code>` : ""}
+          ${esc(r[4] || "receptor type unrecorded")}${r[8] ? (r[9]
+            ? ` · complex <code>${esc(r[8])}</code> shown as one entry; subunit rows merged: ${esc(r[10].join(", "))}`
+            : ` · subunit of <code>${esc(r[8])}</code>`) : ""}
         </div>
         ${ch.pv ? `<div class="warn" style="margin-top:12px">The HMDB entry matched for this
           chemical may not be the exact stereoisomer or tautomer the source intended.</div>` : ""}

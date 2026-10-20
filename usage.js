@@ -10,7 +10,6 @@
   "use strict";
   const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
     m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
-  const S = window.STATS || {};
 
   const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
   const f3 = x => (x == null ? "n/a" : (Math.round(x * 1000) / 1000).toString());
@@ -65,39 +64,12 @@
     }
   };
 
-  const ROLES = [
-    ["synthesis", "Synthesis", "Genes whose enzymes make the ligand itself",
-     "MetalinksDB, MetaLigand, MRCLinkdb (producers), CellChatDB, CellPhoneDB"],
-    ["precursor_synthesis", "Precursor synthesis", "Genes that make the ligand's precursor, not the ligand",
-     "MetaLigand only"],
-    ["influx", "Influx", "Transporters that bring the ligand or its precursor into the cell (salvage)",
-     "MetalinksDB, MetaLigand"],
-    ["degradation", "Degradation", "Genes whose enzymes consume or inactivate the ligand",
-     "MetalinksDB, MRCLinkdb (consumers)"],
-    ["efflux", "Efflux", "Transporters that move the ligand out of the cell, including vesicle loading",
-     "MetalinksDB, MetaLigand, MRCLinkdb (no direction stated), CellChatDB, CellPhoneDB"]
-  ];
-
   function stepsHtml(r) {
     return r.error ? `<p style="color:#8a2b2b">${esc(r.error)}</p>` :
       `<pre class="mono" style="background:var(--chip);padding:10px;border-radius:6px;overflow-x:auto;font-size:12.5px;margin:6px 0">${esc(r.steps.join("\n"))}</pre>`;
   }
 
   function build() {
-    const by = S.by_role || {};
-    const roleRows = ROLES.map(([k, label, what, src]) =>
-      `<tr><td><b>${esc(label)}</b></td><td>${esc(what)}</td><td>${esc(src)}</td>
-       <td style="text-align:right">${(by[k] || 0).toLocaleString()}</td></tr>`).join("");
-
-    const exCells = Object.entries(EXAMPLE.cells).map(([name, v]) => {
-      const r = score(v);
-      return `<h4 style="margin:14px 0 4px;font-size:13.5px">${esc(name)}</h4>
-        <div style="font-size:12.5px;color:var(--muted)">expression:
-          ${["synthesis","precursor","degradation","efflux","receptor"].map(k =>
-            `${k} ${esc(EXAMPLE.names[k])} = ${esc(v[k].join(", "))}`).join(" &middot; ")}</div>
-        ${stepsHtml(r)}`;
-    }).join("");
-
     const first = Object.values(EXAMPLE.cells)[0];
     const box = (k, label) => `<div style="margin:6px 0"><label style="font-size:12.5px;display:block">${label}</label>
       <input type="text" id="uc-${k}" value="${esc(first[k].join(", "))}" style="width:100%;max-width:420px"></div>`;
@@ -110,15 +82,7 @@
       into one number for a cell type or sample, and how that number feeds a ligand&ndash;receptor
       score. It is an <b>estimate of availability from RNA</b>, not a measured concentration.</p>
 
-      <h3>The five roles and where they come from</h3>
-      <div style="overflow-x:auto"><table>
-        <thead><tr><th>Role</th><th>What the genes do</th><th>Source databases</th><th style="text-align:right">Links on this site</th></tr></thead>
-        <tbody>${roleRows}</tbody></table></div>
-
       <h3>The formula</h3>
-      <p>For one cell type or sample, let each role contribute the <b>mean normalised expression</b>
-      of the genes listed for it (mean = arithmetic mean over those genes; a role with no genes is
-      skipped, as described):</p>
       <pre class="mono" style="background:var(--chip);padding:12px;border-radius:6px;overflow-x:auto;font-size:12.5px;line-height:1.7">1  Production
      S_D = sqrt( mean(synthesis) x mean(precursor) )     de novo   (S_D = mean(synthesis) if no precursor genes)
      S_S = sqrt( mean(synthesis) x mean(influx) )        salvage   (only if influx genes exist)
@@ -132,19 +96,6 @@
 
 4  Signal strength for one ligand-receptor pair
      Signal = sqrt( M x mean(receptor genes) )           (for a complex: the genes of its subunits)</pre>
-      <p>Steps 1, 3 and 4 follow MetaLigand. Step 2 follows the idea in MRCLinkdb of
-      producers minus consumers, with negative values set to zero as MetalinksDB does.</p>
-
-      <h3>Worked example: dopamine</h3>
-      <p>A hand-picked <b>core gene set</b> is used, because the full dopamine lists on this site are
-      noisy (for example 23 degradation genes, including chondroitin-sulfate synthases that come
-      from the metabolic model). Core set: synthesis <code>DDC</code>; precursor <code>TH</code>;
-      degradation <code>COMT, MAOA, MAOB</code>; efflux <code>SLC18A2</code> (vesicle loading) and
-      <code>SLC6A3</code>; receptor <code>DRD2</code>. No salvage genes are used. The expression
-      numbers below are <b>invented to show the arithmetic</b>, not real data.</p>
-      ${exCells}
-      <p>The second cell makes a little dopamine on paper (S = 0.548), but its degradation genes
-      are higher than its production, so N is floored at zero and the signal is zero.</p>
 
       <h3>Try your own numbers</h3>
       <p style="font-size:12.5px;color:var(--muted)">Enter normalised expression values for each
@@ -159,32 +110,7 @@
       <p><button id="uc-run">Calculate</button>
          <button id="uc-ex1">Example: neuron</button>
          <button id="uc-ex2">Example: other cell</button></p>
-      <div id="uc-out"></div>
-
-      <h3>Limits</h3>
-      <ul>
-        <li>Gene expression is a proxy. Both source papers warn that mRNA and protein levels are
-        nonlinearly related, and that metabolite levels also depend on substrates, by-products,
-        pH and flux, none of which RNA captures.</li>
-        <li>The Efflux role has a built-in assumption: MRCLinkdb's transporter file gives no
-        direction, so those rows are stored as efflux and marked with a question mark.</li>
-        <li>Source gene lists vary in quality. Transporters and non-enzymes can appear in the
-        enzyme lists (MetalinksDB takes them from metabolic models), so a curated core set per
-        ligand will usually behave better than the full lists.</li>
-        <li>Ions and lipids can cross membranes without transporters, so a missing transporter does
-        not prove a ligand is not released.</li>
-        <li>This formulation combines two published ones and has not itself been validated.</li>
-      </ul>
-
-      <h3>References</h3>
-      <ul>
-        <li>MetaLigand: prior-knowledge-guided framework for non-peptide ligand mediated cell-cell
-        communication. <i>Cell Rep Methods</i> 2025 (PMID 41175863).</li>
-        <li>MRCLinkdb: predicting intercellular communication from metabolite-related
-        ligand-receptor interactions. <i>BMC Biol</i> 2024 (PMID 38978014).</li>
-        <li>MetalinksDB: a resource of metabolite-protein interactions. <i>Brief Bioinform</i>
-        2024 (PMID 39038934).</li>
-      </ul>`;
+      <div id="uc-out"></div>`;
 
     const read = id => document.getElementById("uc-" + id).value
       .split(/[\s,;]+/).filter(Boolean).map(Number).filter(x => isFinite(x) && x >= 0);
