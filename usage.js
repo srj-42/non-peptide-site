@@ -84,18 +84,18 @@
 
       <h3>The formula</h3>
       <pre class="mono" style="background:var(--chip);padding:12px;border-radius:6px;overflow-x:auto;font-size:12.5px;line-height:1.7">1  Production
-     S_D = sqrt( mean(synthesis) x mean(precursor) )     de novo   (S_D = mean(synthesis) if no precursor genes)
-     S_S = sqrt( mean(synthesis) x mean(influx) )        salvage   (only if influx genes exist)
-     S   = (S_D + S_S) / 2                               (S = S_D if no salvage term)
+     S_D = sqrt( mean(synthesis) x mean(precursor) )
+     S_S = sqrt( mean(synthesis) x mean(influx) )
+     S   = (S_D + S_S) / 2
 
 2  Net of degradation
      N   = max( 0 , S - mean(degradation) )
 
 3  Availability
-     M   = sqrt( N x mean(efflux) )                      (M = N if the ligand has no exporters)
+     M   = sqrt( N x mean(efflux) )
 
 4  Signal strength for one ligand-receptor pair
-     Signal = sqrt( M x mean(receptor genes) )           (for a complex: the genes of its subunits)</pre>
+     Signal = sqrt( M x mean(receptor genes) )</pre>
 
       <h3>Try your own numbers</h3>
       <p style="font-size:12.5px;color:var(--muted)">Enter normalised expression values for each
@@ -107,9 +107,7 @@
       ${box("degradation", "Degradation genes")}
       ${box("efflux", "Efflux genes")}
       ${box("receptor", "Receptor genes")}
-      <p><button id="uc-run">Calculate</button>
-         <button id="uc-ex1">Example: neuron</button>
-         <button id="uc-ex2">Example: other cell</button></p>
+      <p><button id="uc-run">Calculate</button></p>
       <div id="uc-out"></div>`;
 
     const read = id => document.getElementById("uc-" + id).value
@@ -119,11 +117,7 @@
       const v = {}; KEYS.forEach(k => v[k] = read(k));
       document.getElementById("uc-out").innerHTML = stepsHtml(score(v));
     };
-    const load = cell => { KEYS.forEach(k => document.getElementById("uc-" + k).value = cell[k].join(", ")); run(); };
-    const cells = Object.values(EXAMPLE.cells);
     document.getElementById("uc-run").onclick = run;
-    document.getElementById("uc-ex1").onclick = () => load(cells[0]);
-    document.getElementById("uc-ex2").onclick = () => load(cells[1]);
     run();
   }
 
