@@ -99,6 +99,7 @@
     const rt = document.getElementById("rtype").value;
     const ms = +document.getElementById("minsrc").value;
     const only = document.getElementById("only").value;
+    const assay = document.getElementById("assay").value;
     view = I.filter(r => {
       if (q && !(r[2].toLowerCase().includes(q) || r[3].toLowerCase().includes(q) || (r[10] || []).some(g => g.toLowerCase().includes(q)))) return false;
       if (mc && (C[r[1]] || {}).mc !== mc) return false;
@@ -110,6 +111,7 @@
       if (only === "enz" && !hasEnz(r[1])) return false;
       if (only === "noenz" && hasEnz(r[1])) return false;
       if (only === "prov" && !(C[r[1]] || {}).pv) return false;
+      if (assay && !((window.EVIDENCE || {})[r[0]] || []).some(e => e.as === assay)) return false;
       if (only === "evid" && !(window.EVIDENCE || {})[r[0]]) return false;
       return true;
     });
@@ -568,6 +570,19 @@
     const cls = [...new Set(Object.values(C).map(c => c.mc).filter(Boolean))].sort();
     document.getElementById("mclass").insertAdjacentHTML("beforeend",
       cls.map(c => `<option>${esc(c)}</option>`).join(""));
+    /* Assay classes come from the confirmed evidence rows. Each option shows how many
+       pairs in the table have at least one evidence row of that class. */
+    const ASSAY_LABEL = { structural: "structural", direct_binding: "direct binding",
+      functional_in_vitro: "functional in vitro", functional_in_vivo: "functional in vivo",
+      computational: "computational" };
+    const perClass = {};
+    I.forEach(r => {
+      new Set(((window.EVIDENCE || {})[r[0]] || []).map(e => e.as).filter(Boolean))
+        .forEach(k => { perClass[k] = (perClass[k] || 0) + 1; });
+    });
+    document.getElementById("assay").insertAdjacentHTML("beforeend",
+      Object.keys(ASSAY_LABEL).filter(k => perClass[k]).map(k =>
+        `<option value="${k}">${esc(ASSAY_LABEL[k])} (${perClass[k]})</option>`).join(""));
     const rts = [...new Set(I.map(r => r[4]).filter(Boolean))].sort();
     document.getElementById("rtype").insertAdjacentHTML("beforeend",
       rts.map(c => `<option>${esc(c)}</option>`).join(""));
@@ -581,7 +596,7 @@
       document.getElementById("tab-" + t).classList.toggle("hide", t !== b.dataset.tab));
     if (b.dataset.tab === "chems" && !cview.length) capply();
   });
-  ["q", "mclass", "rtype", "minsrc", "only"].forEach(id => {
+  ["q", "mclass", "rtype", "minsrc", "assay", "only"].forEach(id => {
     const el = document.getElementById(id);
     el.addEventListener(id === "q" ? "input" : "change", apply);
   });
