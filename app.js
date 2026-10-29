@@ -419,10 +419,7 @@
       <div class="stat-grid">
         <div class="stat"><b>${S.n_inter.toLocaleString()}</b><span>chemical–receptor pairs</span></div>
         <div class="stat"><b>${S.n_chem}</b><span>chemical ligands</span></div>
-        <div class="stat"><b>${S.n_enz.toLocaleString()}</b><span>metabolite–enzyme links</span></div>
-        <div class="stat"><b>${(S.cited / S.n_inter * 100).toFixed(0)}%</b><span>pairs with any citation</span></div>
-        <div class="stat"><b>${(S.n_pairs_with_evidence || 0).toLocaleString()}</b><span>pairs with confirmed evidence</span></div>
-        <div class="stat"><b>${(S.n_evidence_papers || 0).toLocaleString()}</b><span>primary papers read</span></div>
+        <div class="stat"><b>${(S.n_verified || 0).toLocaleString()}</b><span>verified pairs</span></div>
       </div>
       <div class="panel" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px;font-size:15px">Confirmed evidence by what it says</h3>
