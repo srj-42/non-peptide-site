@@ -176,16 +176,17 @@
                         computational: "in silico" };
   /* Non-literature evidence classes (CITATION_METHODS.md Methods 3, 4). A
      nomenclature_evident pair ranks ABOVE literature evidence (owner decision
-     2026-10-15); database_annotated ranks below it. */
+     2026-10-15); database_annotated ranks below it. Since 2026-10-31 (owner) a database_annotated
+     record also makes the pair verified. */
   const CLS_LABEL = { nomenclature_evident: "name-evident", database_annotated: "database" };
   const CLS_TITLE = {
     nomenclature_evident: "The receptor's official HGNC name contains this molecule's own name (exact name only, no class matching). High confidence without a citation.",
-    database_annotated: "A curated protein database annotates this molecule with this protein and cites a paper; no sentence from that paper has been verified yet."
+    database_annotated: "A curated database (ChEMBL, GtoPdb, BindingDB, PDB, UniProt/Rhea or TCDB) records this molecule acting on, binding or being transported by this protein. Counted as direct evidence; no sentence has been quoted from a paper."
   };
   function clsBadges(id) {
     const cl = (window.CLASSEV || {})[id] || [];
     return [...new Set(cl.map(c => c.cls))].sort((a, b) => a === "nomenclature_evident" ? -1 : 1)
-      .map(k => `<span class="badge ${k === "nomenclature_evident" ? "b-verified" : "b-unverified"}" title="${esc(CLS_TITLE[k] || "")}">${esc(CLS_LABEL[k] || k)}</span>`).join("");
+      .map(k => `<span class="badge b-verified" title="${esc(CLS_TITLE[k] || "")}">${esc(CLS_LABEL[k] || k)}</span>`).join("");
   }
   function classPanel(id) {
     const cl = (window.CLASSEV || {})[id] || [];
@@ -194,7 +195,7 @@
     return `<h3 style="margin:22px 0 8px;font-size:15px">Evidence class</h3>` +
       cl.slice().sort((a, b) => order(a) - order(b)).map(c => `<div class="ev confirmed">
         <div class="top">
-          <span class="badge ${c.cls === "nomenclature_evident" ? "b-verified" : "b-unverified"}" title="${esc(CLS_TITLE[c.cls] || "")}">${esc(CLS_LABEL[c.cls] || c.cls)}</span>
+          <span class="badge b-verified" title="${esc(CLS_TITLE[c.cls] || "")}">${esc(CLS_LABEL[c.cls] || c.cls)}</span>
           <span class="chip">${esc(c.conf)} confidence</span>
           <span class="chip">${esc(c.src)}</span>
           ${c.pmid ? `<span style="margin-left:auto">${pmidLinks(c.pmid)}</span>` : ""}
