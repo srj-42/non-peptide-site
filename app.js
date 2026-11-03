@@ -387,7 +387,7 @@
           <dt>Class</dt><dd>${ch.mc ? `<span class="chip">${esc(ch.mc)}</span>` : "&mdash;"}
             ${ch.sc ? `<div style="color:var(--muted);font-size:12px">HMDB: ${esc(ch.sc)}${ch.cl ? " / " + esc(ch.cl) : ""}</div>` : ""}
             ${ch.cc ? `<div style="color:var(--muted);font-size:12px" title="MetaLigand's own grouping (KEGG-style). It lumps amino acids, amines and neurotransmitters under 'Peptides'; it is not a ChEBI class and not the chemical class used elsewhere on this site.">MetaLigand group: ${esc(ch.cc)}</div>` : ""}</dd>
-          ${ch.sm ? `<dt title="SMILES is a one-line text code for a molecule's structure: letters are atoms, brackets and digits show branches and rings. Software can redraw the structure from it.">SMILES <span style="color:var(--muted)" title="A one-line text code for the molecule's structure (atoms and bonds); software can redraw the structure from it.">(?)</span></dt><dd class="smiles">${esc(ch.sm)}</dd>` : ""}
+          ${ch.sm ? `<dt title="SMILES is a one-line text code for a molecule's structure: letters are atoms, brackets and digits show branches and rings. Software can redraw the structure from it.">SMILES</dt><dd class="smiles">${esc(ch.sm)}</dd>` : ""}
           ${ch.syn && ch.syn.length ? `<dt>Also known as</dt><dd style="font-size:12.5px;color:var(--muted)">${esc(ch.syn.slice(0, 8).join(", "))}</dd>` : ""}
         </dl>
 
@@ -475,13 +475,15 @@
       mrclinkdb_human_mr: "MRCLinkdb", cellphonedb_interactions: "CellPhoneDB v5", metaligand_pairs_human: "MetaLigand",
       metalinksdb: "MetalinksDB" };
     const cmpMax = Math.max(S.n_inter, ...Object.values(bs).map(x => x.pairs), 1);
-    const cmpBar = (lab, tot, ver, strong) => `<div class="hbar">
-      <span class="lab"${strong ? ' style="color:var(--text,#111);font-weight:600"' : ""}>${esc(lab)}</span>
+    const cmpBar = (lab, tot, ver, strong) => `<div class="hbar" title="${esc(lab)}: ${ver.toLocaleString()} of ${tot.toLocaleString()} pairs verified">
+      <span class="lab"${strong ? ' style="color:var(--ink);font-weight:600"' : ""}>${esc(lab)}</span>
       <span class="track" style="position:relative"><i style="width:${(tot / cmpMax * 100).toFixed(1)}%;opacity:.35"></i>
         <i style="position:absolute;left:0;top:0;width:${(ver / cmpMax * 100).toFixed(1)}%;opacity:.9"></i></span>
-      <span class="n" style="width:120px">${tot.toLocaleString()} &middot; ${ver.toLocaleString()} verified</span></div>`;
-    const cmpRows = Object.entries(bs).map(([k, v]) => cmpBar(SRCL[k] || k, v.pairs, v.verified, false)).join("") +
-      cmpBar("This database", S.n_inter, S.n_verified || 0, true);
+      <span class="n" style="width:150px">${tot.toLocaleString()} &middot; ${ver.toLocaleString()} verified</span></div>`;
+    const cmpRows = Object.entries(bs).map(([k, v]) => cmpBar(SRCL[k] || k, v.pairs, v.own_verified ?? 0, false)).join("") +
+      cmpBar("This database", S.n_inter, S.n_verified || 0, true) +
+      `<div class="donut-key"><span><i style="background:var(--accent)"></i>verified</span>
+        <span><i style="background:var(--accent);opacity:.35"></i>listed, not verified</span></div>`;
     document.getElementById("statbody").innerHTML = `
       <div class="stat-grid">
         <div class="stat"><b>${S.n_inter.toLocaleString()}</b><span>chemical–receptor pairs</span></div>
@@ -489,11 +491,12 @@
         <div class="stat"><b>${(S.n_verified || 0).toLocaleString()}</b><span>verified pairs</span></div>
       </div>
       <div class="panel" style="margin-bottom:16px">
-        <h3 style="margin:0 0 8px;font-size:15px">Pairs in each resource, and how many we verified</h3>
-        <p style="color:var(--muted);font-size:12.5px;margin:0 0 10px">Number of chemical&ndash;receptor pairs each
-          upstream resource lists (light bar), and how many of those pairs this database could verify
-          (dark part). The last row is this database: every pair it holds, and the pairs it
-          verified (literature with a checked quote, or a curated-database record).</p>
+        <h3 style="margin:0 0 8px;font-size:15px">Existing resources compared with this database</h3>
+        <p style="color:var(--muted);font-size:12.5px;margin:0 0 10px">Each existing resource as it stands: how many
+          chemical&ndash;receptor pairs it lists, and how many of those it already verifies by this project's standard, using only
+          what the resource itself supplies (a paper it cites that states the interaction in a quoted sentence, or a curated
+          record with measured pharmacology, as in GtoPdb). The last bar is this database, after adding literature reading and
+          curated-database records (ChEMBL, BindingDB, PDB, UniProt/Rhea, TCDB) across all pairs.</p>
         ${cmpRows}
       </div>
       <div class="panel" style="margin-bottom:16px">
@@ -503,23 +506,6 @@
           (a pair can appear under several). These are measured activities or structures recorded by the
           database, not quoted sentences.</p>
         ${bars(S.by_dbsource || {})}
-      </div>
-      <div class="panel" style="margin-bottom:16px">
-        <h3 style="margin:0 0 8px;font-size:15px">Where the data comes from, and how far to trust it</h3>
-        <table class="trust"><thead><tr><th>Source</th><th>What it is</th><th>Cites papers?</th><th>How much to trust it</th></tr></thead><tbody>
-          ${TRUST.map(t => `<tr><td><b>${esc(t[0])}</b></td><td>${esc(t[1])}</td><td>${esc(t[2])}</td><td>${esc(t[3])}</td></tr>`).join("")}
-        </tbody></table>
-        <p style="color:var(--muted);font-size:12px;margin:10px 0 0">Trust notes are this project's own assessment.
-          A pair listed by only one text-mined or prediction-based resource is a lead, not a fact; it
-          becomes <i>verified</i> here only when a paper's own sentence or a curated database record backs it.</p>
-      </div>
-      <div class="panel" style="margin-bottom:16px">
-        <h3 style="margin:0 0 8px;font-size:15px">How many sources agree</h3>
-        <p style="color:var(--muted);font-size:12.5px;margin:0 0 10px">
-          ${single.toLocaleString()} of ${S.n_inter.toLocaleString()} pairs
-          (${(single / S.n_inter * 100).toFixed(0)}%) are carried by a single source; the rest
-          are reported by two or more.</p>
-        ${bars(S.by_nsrc)}
       </div>
       <div class="panel" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px;font-size:15px">Enzyme roles</h3>
@@ -572,118 +558,7 @@
           TCDB: "A transporter substrate annotation",
           "HGNC approved name": "The receptor is officially named after the molecule"
         })[k] || "", v.toLocaleString()])])}
-      <p style="color:var(--muted);font-size:12.5px">A pair can be verified by several of these at once.</p>
-
-      <h3>3. What "verified" means here</h3>
-      <ul>
-        <li><b>Verified</b>: at least one quoted sentence from a primary paper, or at least one curated database record from section 2.</li>
-        <li><b>Not verified</b>: only the aggregated lists in section 1 assert the pair. Treat it as a lead.</li>
-        <li>A paper that was read but does not test the pair is <i>not</i> counted as evidence against it. Only a paper that tested
-          this exact pair and found nothing counts as a refutation.</li>
-        <li>Quoted sentences were checked mechanically against the paper's own text; they were not read by a person.</li>
-      </ul>
-
-      <h3>What this is</h3>
-      <p>Seven existing databases describe interactions between small molecules —
-      metabolites, neurotransmitters, steroids, lipids — and the proteins that receive them.
-      Each uses its own names, its own identifiers and its own table layout. This resource
-      merges all seven into one table, one row per chemical–receptor pair in human, and keeps
-      every original row alongside it so any entry can be traced back to the database it
-      came from.</p>
-      <p>It exists because the peptide resource is built on connectomeDB2025, which excludes
-      non-peptide ligands as a matter of policy. Glutamate, GABA, serotonin, acetylcholine,
-      the prostaglandins and the steroids are absent from it entirely.</p>
-
-      <h3>The sources</h3>
-      <div>${(m.sources || []).filter(s => s.shippable).map(s =>
-        `<div class="dl"><b>${esc(s.name)}</b><span>${esc(s.licence)}</span></div>`).join("")}</div>
-
-      <h3>How they were merged, and the choices that involved</h3>
-
-      <p><b>Matching the chemicals.</b> The hard part is knowing when two databases mean the
-      same molecule. They rarely spell it the same way: one writes
-      <code>7-a,25-Dihydroxycholesterol</code>, another <code>7α,25-dihydroxycholesterol</code>.
-      Four of the seven give an HMDB identifier, so those were matched on the identifier.
-      The rest were matched by name, then by a list of synonyms, in that order. Where two
-      sources disagreed about a molecule's identity the disagreement was recorded rather than
-      resolved silently, and the first value seen was kept.</p>
-
-      <p><b>Chemicals were given their own table.</b> A metabolite has no gene and no protein
-      accession, so it cannot sit in a table built for genes without inventing something. It
-      gets its own record with HMDB and PubChem identifiers, a formula and a structure where
-      a source supplied them. ChEBI identifiers are empty throughout: no source in the union
-      publishes one, and none was guessed.</p>
-
-      <p><b>Two sources bundle the ligand and its enzymes into one label.</b> CellChatDB
-      writes <code>5-HT-TPH1_SLC18A1</code>, meaning serotonin, made by TPH1, exported by
-      SLC18A1. That is three separate facts in one string. All 239 such labels were taken
-      apart so the chemical is stored as the chemical and the enzymes are stored separately.
-      Fifteen needed a person to decide; the rest were unambiguous.</p>
-
-      <p><b>Enzymes are kept apart from receptors, deliberately.</b> You cannot measure a
-      metabolite directly in transcriptomic data — it has no transcript. What you can measure
-      are the genes that make it, export it, import it or break it down. Those genes are
-      recorded in a separate table, because "this cell can produce the molecule" is a
-      different statement from "this molecule binds that receptor", and merging the two would
-      blur them. Five roles are used: synthesis, precursor synthesis, degradation, export and
-      import. Each source labels these differently, so every label was mapped onto the five
-      and the original wording kept next to it.</p>
-
-      <p><b>Where sources disagree, both readings are kept.</b> For dopamine, three databases
-      call SLC18A1 and SLC18A2 exporters and one calls them importers. Both are defensible —
-      the transporter moves dopamine into a vesicle, which is import across that membrane and
-      export from the cell's point of view. Rather than pick, the table carries both with the
-      source attached.</p>
-
-      <p><b>Receptor complexes were broken into their parts.</b> Three of the sources describe
-      multi-protein receptors, each in its own notation — <code>GABR_A1B2</code>,
-      <code>GABRA1;GABRG2;GABRB2</code>, and a named entry in a separate file. Each was split
-      into individual proteins, with a label tying the parts back together.</p>
-
-      <p><b>Some rows were dropped.</b> Eight entries filed under non-peptide signalling are
-      peptides or protein complexes, and were excluded. A few rows fused two different
-      chemicals into one entry — one source lists "Aldosterone Corticosterone" as a single
-      ligand, another pairs glycerol with fumaric acid — and those were split apart by
-      identifier rather than by splitting the text, because several chemical names contain
-      commas themselves.</p>
-
-      <p><b>One source is not redistributed.</b> MEBOCOST's licence does not permit it, so its
-      rows are withheld and its name is removed from the source lists shown here. Counts of
-      how many sources report a pair can therefore be lower here than in the working
-      database.</p>
-
-      <h3>Confirmed evidence, and what that word means here</h3>
-      <p>${S.n_evidence || 0} primary papers have been read for ${S.n_pairs_with_evidence || 0}
-      of the ${S.n_inter.toLocaleString()} pairs, each one quoting the sentence in the paper that
-      states the result. Those pairs carry a green panel in the drawer, and the
-      <i>has confirmed evidence</i> filter shows only them. Everything else carries provenance
-      alone.</p>
-      <p><b>Confirmed here means machine-verified, not curator-read.</b> Each quoted sentence was
-      checked to appear verbatim in the paper's own abstract or publisher full text, with the
-      molecule and the receptor both named in that same text, and the paper checked not to be a
-      review or retracted. No person has read the paper. That is a weaker claim than the peptide
-      half's confirmations, and the two should not be compared.</p>
-      <p>The labels answer different questions. <b>Supports</b> and <b>refutes</b> are about the
-      pair as stated: a refutation means a paper tested this molecule at this receptor and found
-      nothing, which makes the pair wrong rather than merely unevidenced. There are
-      ${(S.by_result || {}).REFUTES || 0} of them. <b>Family level</b> means the paper implicates
-      the receptor family but not the named subunit. <b>Transporter</b> and <b>enzyme</b> mean the
-      protein moves or consumes the molecule, which is a real relationship but not receptor
-      binding.</p>
-      <p>Absence of a panel is not evidence of absence. Of 435 pairs searched so far, 298 returned
-      no qualifying paper, and the reasons differ sharply: the wrong molecule (cystine where the
-      pair says cysteine, cholecalciferol where the receptor wants calcitriol), the cargo mistaken
-      for the ligand (iron at TFR1, whose ligand is transferrin), a dimerisation partner mistaken
-      for the target (9-cis-retinoic acid at every RXR partner), a name collision (L-arginine at
-      the arginine-vasopressin receptor), a human pseudogene (GLRA4), or simply nobody having run
-      the experiment. Those reasons are recorded per pair in the working database, not here.</p>
-
-      <h3>Reading a row</h3>
-      <p>Each row names a chemical and a receptor, the sources that report the pair, and the
-      PubMed identifiers those sources cite, where they cite any. Clicking a row opens the
-      chemical's identifiers and classification, the genes that make and move it grouped by
-      role, any confirmed evidence, and every original database row behind the pair, exactly as
-      that database wrote it.</p>`;
+      <p style="color:var(--muted);font-size:12.5px">A pair can be verified by several of these at once.</p>`;
   }
 
 

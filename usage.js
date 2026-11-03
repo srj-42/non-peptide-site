@@ -82,6 +82,15 @@
       into one number for a cell type or sample, and how that number feeds a ligand&ndash;receptor
       score. It is an <b>estimate of availability from RNA</b>, not a measured concentration.</p>
 
+      <h3>The gene roles</h3>
+      <ul style="font-size:13.5px;line-height:1.7">
+        <li><b>Precursor synthesis</b>: genes that make the molecule the ligand is built from.</li>
+        <li><b>Synthesis</b>: genes that make the ligand itself.</li>
+        <li><b>Influx</b>: transporters that bring the ligand, or its precursor, into the cell to be reused.</li>
+        <li><b>Efflux</b>: transporters that move the ligand out of the cell or load it into vesicles for release.</li>
+        <li><b>Degradation</b>: genes that break the ligand down or inactivate it.</li>
+      </ul>
+
       <h3>The formula</h3>
       <pre class="mono" style="background:var(--chip);padding:12px;border-radius:6px;overflow-x:auto;font-size:12.5px;line-height:1.7">1  Production
      S_D = sqrt( mean(synthesis) x mean(precursor) )
