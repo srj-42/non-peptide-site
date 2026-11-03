@@ -40,8 +40,8 @@
         <option value="cited">has a citation</option>
         <option value="uncited">no citation at all</option>
         <option value="cplx">receptor is a complex subunit</option>
-        <option value="enz">chemical has enzymes (inferable)</option>
-        <option value="noenz">chemical has NO enzymes</option>
+        <option value="enz">chemical has genes (inferable)</option>
+        <option value="noenz">chemical has NO genes</option>
         <option value="prov">provisional identity</option>
       </select></div>
       <div class="count" id="count"></div>
@@ -50,15 +50,16 @@
     <table>
       <thead><tr>
         <th data-s="2">Chemical</th><th data-s="3">Receptor</th><th data-s="4">Receptor type</th>
-        <th data-s="5" class="sorted">Sources</th><th data-s="7">PMIDs</th>
+        <th data-s="5" class="sorted">Sources</th><th data-s="7" title="Distinct PubMed ids across upstream citations, quoted papers and database records">PMIDs</th>
         <th>Evidence</th><th>Assay classes</th>
-        <th>Class</th><th>Enzymes</th>
+        <th>Class</th><th title="Genes for the ligand: enzymes, transporters, channels">Genes</th>
       </tr></thead>
       <tbody id="rows"></tbody>
     </table>
     </div>
     <div class="pager">
       <button id="prev">‹ Prev</button><span id="pageinfo"></span><button id="next">Next ›</button>
+      <button id="dlcsv" style="margin-left:auto" title="Download every row that matches the current filters (not just this page)">Download CSV</button>
     </div>
   </div>
 </section>
@@ -70,8 +71,8 @@
       <div class="f"><label>Search</label><input type="search" id="cq" placeholder="name, HMDB id, formula"></div>
       <div class="f"><label>Only</label><select id="conly">
         <option value="">all chemicals</option>
-        <option value="enz">with enzymes</option>
-        <option value="noenz">without enzymes</option>
+        <option value="enz">with genes</option>
+        <option value="noenz">without genes</option>
         <option value="nt">neurotransmitters</option>
         <option value="prov">provisional identity</option>
       </select></div>
@@ -80,7 +81,7 @@
     <div style="overflow-x:auto">
     <table>
       <thead><tr><th>Chemical</th><th>HMDB</th><th>Formula</th><th>Class</th>
-        <th>Receptors</th><th>Enzymes</th><th>Sources</th></tr></thead>
+        <th>Receptors</th><th>Genes</th><th>Sources</th></tr></thead>
       <tbody id="crows"></tbody>
     </table>
     </div>
@@ -103,6 +104,7 @@
 
 <script>window.__PROV=[];</script>
 <script src="data/stats.js"></script>
+<script src="data/verified.js"></script>
 <script src="data/chemicals.js"></script>
 <script src="data/enzymes.js"></script>
 <script src="data/interactions.js"></script>

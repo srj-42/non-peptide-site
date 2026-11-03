@@ -19,7 +19,8 @@
     mrclinkdb_human_mr: "MRCLinkdb",
     cellphonedb_interactions: "CellPhoneDB v5",
     metaligand_pairs_human: "MetaLigand",
-    metalinksdb: "MetalinksDB"
+    metalinksdb: "MetalinksDB",
+    metaligand_ligands_human: "MetaLigand", mrclinkdb_human_enzyme: "MRCLinkdb", mrclinkdb_human_transporter: "MRCLinkdb"
   };
   /* Sources that carry a per-pair citation. Used only to colour the provenance
      strip - it is a provenance cue, never a score. */
@@ -27,9 +28,9 @@
   const ROLE_CLASS = { synthesis: "syn", degradation: "deg", efflux: "eff",
                        influx: "inf", precursor_synthesis: "pre" };
   const ROLE_HELP = {
-    synthesis: "Enzymes that make the ligand itself.",
-    precursor_synthesis: "Enzymes that make the ligand's precursor.",
-    degradation: "Enzymes that consume or inactivate it.",
+    synthesis: "Genes whose products make the ligand itself.",
+    precursor_synthesis: "Genes whose products make the ligand's precursor.",
+    degradation: "Genes whose products consume or inactivate it.",
     efflux: "Transporters that export it, including synaptic-vesicle loading.",
     influx: "Transporters that import it, or its precursor (salvage)."
   };
@@ -90,6 +91,31 @@
     I.splice(0, I.length, ...kept, ...made);
   })();
 
+  /* ---------- CSV download of the filtered table (owner request 2026-11-03) ---------- */
+  function csvCell(v) {
+    v = String(v == null ? "" : v);
+    return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  }
+  function saveCSV(name, head, rows) {
+    const text = "\ufeff" + [head, ...rows].map(r => r.map(csvCell).join(",")).join("\r\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
+    a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+  function downloadChemCSV() {
+    const VS = new Set(window.VERIFIED || []);
+    const head = ["pair_id", "chemical", "hmdb_id", "pubchem_cid", "formula", "chemical_class", "receptor", "receptor_type",
+      "complex", "n_sources", "sources", "n_pmids", "verified", "literature_evidence", "assay_classes", "database_evidence", "n_genes"];
+    saveCSV("lr_chemical_pairs.csv", head, view.map(r => {
+      const ch = C[r[1]] || {}, ids = r[9] || [r[0]];
+      const ev = (window.EVIDENCE || {})[r[0]] || [], cl = (window.CLASSEV || {})[r[0]] || [];
+      return [r[0], r[2], ch.h || "", ch.pc || "", ch.f || "", ch.mc || "", r[3], r[4], r[8] || "", r[5],
+        srcList(r[6]).map(x => SRC_LABEL[x] || x).join("; "), r[7], ids.some(i => VS.has(i)) ? "yes" : "no",
+        [...new Set(ev.map(e => e.res).filter(Boolean))].join("; "), [...new Set(ev.map(e => e.as).filter(Boolean))].join("; "),
+        [...new Set(cl.map(c => c.src).filter(Boolean))].join("; "), new Set((E[r[1]] || []).map(x => x[0])).size];
+    }));
+  }
   /* ---------------- filters + table ---------------- */
   let sortCol = 5, sortAsc = false, page = 0, view = I;
 
@@ -137,11 +163,11 @@
         <td class="pair">${esc(r[3])}${r[8] ? ` <span class="chip" title="subunit of ${esc(r[8])}">complex</span>` : ""}</td>
         <td>${r[4] ? `<span class="chip">${esc(r[4])}</span>` : ""}</td>
         <td>${srcBar(r[6])} <span style="color:var(--muted);font-size:12px">${r[5]}</span></td>
-        <td>${r[7] ? esc(r[7]) : '<span class="unassessed" title="No source supplies a citation for this pair">none</span>'}</td>
+        <td>${r[7] ? esc(r[7]) : '<span class="unassessed" title="No upstream source cites a paper for this pair, and no quoted paper or database record carries a PMID">none</span>'}</td>
         <td>${evCell(r[0])}</td>
         <td>${assayCell(r[0])}</td>
         <td>${ch.mc ? `<span class="chip">${esc(ch.mc)}</span>` : ""}</td>
-        <td>${ez.length ? esc(ez.length) : '<span class="unassessed" title="Not inferable from expression data - no enzymes recorded">none</span>'}</td>
+        <td>${ez.length ? esc(new Set(ez.map(x => x[0])).size) : '<span class="unassessed" title="No genes recorded for this chemical, so it cannot be inferred from expression data">none</span>'}</td>
       </tr>`;
     }).join("");
     document.getElementById("pageinfo").textContent = `page ${page + 1} / ${pages}`;
@@ -220,15 +246,23 @@
   }
 
   function pmidLinks(ref) {
-    const ids = [...new Set((ref || "").match(/(?<!\d)\d{7,8}(?!\d)/g) || [])];
+    const clean = /^\s*\d+(\s*[;|,]\s*\d+)*\s*$/.test(ref || "");   // a plain id list: short old PMIDs (e.g. 8699) are real
+    const ids = [...new Set((ref || "").match(clean ? /\d+/g : /(?<!\d)\d{7,8}(?!\d)/g) || [])];
     if (!ids.length) return "";
     return ids.map(p => `<a class="mono" href="https://pubmed.ncbi.nlm.nih.gov/${p}/"
       target="_blank" rel="noopener">PMID ${p} &#8599;</a>`).join(" ");
   }
 
+  const GT_LABEL = { enzyme: "enzyme", transporter: "transporter", channel: "channel", other: "other" };
+  const GT_HELP = {
+    enzyme: "Catalyses a reaction (HGNC lists an EC number, or the protein name ends in -ase).",
+    transporter: "Moves molecules across a membrane (solute carriers, ABC transporters, pumps).",
+    channel: "Ion channel subunit.",
+    other: "None of the above in HGNC's records (for example binding proteins and regulators)."
+  };
   function enzPanel(cid) {
-    const rows = E[cid] || [];
-    if (!rows.length) return `<p style="color:var(--muted)">No enzymes recorded. This chemical
+    const rows = E[cid] || [], GI = window.GENEINFO || {};
+    if (!rows.length) return `<p style="color:var(--muted)">No genes recorded. This chemical
       <b>cannot be inferred from transcriptomic data</b> — there is no gene whose expression
       stands in for it.</p>`;
     const byRole = {};
@@ -238,17 +272,19 @@
       byRole[role][g].srcs.add(src);
     });
     const order = ["precursor_synthesis", "synthesis", "efflux", "influx", "degradation"];
-    return order.filter(r => byRole[r]).map(role => {
-      const genes = Object.entries(byRole[role]).sort((a, b) => b[1].srcs.size - a[1].srcs.size);
+    return `<p style="color:var(--muted);font-size:12px;margin:0 0 4px">Within each role, genes are ordered by how many
+      source databases list them for this chemical (the number on each gene); the tag says what kind of protein it is.</p>` +
+      order.filter(r => byRole[r]).map(role => {
+      const genes = Object.entries(byRole[role]).sort((a, b) => b[1].srcs.size - a[1].srcs.size || (a[0] < b[0] ? -1 : 1));
       return `<div style="margin:8px 0">
         <div style="font-size:12px;color:var(--muted)" title="${esc(ROLE_HELP[role] || "")}">
           ${esc(role.replace("_", " "))} · ${genes.length} gene${genes.length === 1 ? "" : "s"}</div>
-        <div style="margin-top:4px">${genes.map(([g, v]) =>
-          `<span class="pill ${ROLE_CLASS[role] || ""}" title="${esc([...v.srcs].map(s => SRC_LABEL[s] || s).join(", "))}${v.dk ? "" : " — direction not stated by the source"}">${esc(g)}${v.dk ? "" : "?"}</span>`
-        ).join("")}</div></div>`;
+        <div style="margin-top:4px">${genes.map(([g, v]) => {
+          const gi = GI[g] || ["other", ""], t = gi[0];
+          return `<span class="pill ${ROLE_CLASS[role] || ""}" title="${esc((gi[1] ? gi[1] + " — " : "") + "listed by " + [...v.srcs].map(s => SRC_LABEL[s] || s).join(", "))}${v.dk ? "" : " — direction not stated by the source"}">${esc(g)}${v.dk ? "" : "?"}<sup class="gcount">${v.srcs.size}</sup><span class="gtype gt-${t}" title="${esc(GT_HELP[t])}">${esc(GT_LABEL[t])}</span></span>`;
+        }).join("")}</div></div>`;
     }).join("");
   }
-
 
   /* ---------------- confirmed evidence panel ----------------
      chemical_evidence.csv rows for this pair. These are NOT the upstream citations
@@ -262,7 +298,7 @@
     TRANSPORTER: "the protein moves the molecule; that is not receptor binding",
     ENZYME: "the protein consumes or produces the molecule; that is not receptor binding"
   };
-  function evidencePanel(id) {
+  function evidencePanel(id, row) {
     const ev = (window.EVIDENCE || {})[id] || [];
     if (!ev.length) return "";
     return `<h3 style="margin:22px 0 8px;font-size:15px">Confirmed evidence &mdash; ${ev.length} paper${ev.length === 1 ? "" : "s"}</h3>` +
@@ -277,7 +313,7 @@
         <blockquote style="margin:8px 0 6px;padding-left:11px;border-left:3px solid var(--ok,#1a7f37);font-size:13.5px;line-height:1.6">
           &ldquo;${esc(e.sent)}&rdquo;</blockquote>
         <div class="title" style="color:var(--muted)">
-          ${esc(e.mol)} at ${esc(e.rec)}${e.jr ? " &middot; " + esc(e.jr) : ""}${e.yr ? " " + esc(e.yr) : ""}
+          ${esc(e.mol || (row && row[2]) || "")} at ${esc(e.rec || (row && row[3]) || "")}${e.jr ? " &middot; " + esc(e.jr) : ""}${e.yr ? " " + esc(e.yr) : ""}
         </div>
         ${e.aff ? `<div class="title" style="color:var(--muted)">${esc(e.aff)}</div>` : ""}
       </div>`).join("") +
@@ -300,14 +336,19 @@
       const provPmids = [...new Set(prov.flatMap(p =>
         (p[3] || "").match(/(?<!\d)\d{7,8}(?!\d)/g) || []))];
       const nCite = prov.filter(p => p[3]).length;
+      const dbNames = [...new Set(((window.CLASSEV || {})[id] || []).map(c => c.src).filter(Boolean))];
+      const allPm = [...new Set([...provPmids,
+        ...((window.EVIDENCE || {})[id] || []).flatMap(e => String(e.pmid || "").match(/\d{1,9}/g) || []),
+        ...((window.CLASSEV || {})[id] || []).flatMap(c => String(c.pmid || "").match(/\d{1,9}/g) || [])])];
       const provHtml = prov.length ? `
         <p style="margin:0 0 8px;font-size:13px">
           <b>${provNames.length} database${provNames.length === 1 ? "" : "s"}:</b>
           ${esc(provNames.join(" · "))}
           <span style="color:var(--muted)">&mdash; ${nCite
             ? nCite + " of " + prov.length + " row" + (prov.length === 1 ? "" : "s") + " cite a paper"
-            : "none of them cites a paper"}</span>
-          ${provPmids.length ? "<br>" + provPmids.map(x => pmidLinks(x)).join(" ") : ""}
+            : "none of these source rows cites a paper"}</span>
+          ${dbNames.length ? `<br><b>Database evidence:</b> ${esc(dbNames.join(" · "))}` : ""}
+          ${allPm.length ? "<br>" + allPm.map(x => pmidLinks(x)).join(" ") : ""}
         </p>
         <details style="font-size:12.5px">
           <summary style="cursor:pointer;color:var(--muted)">Upstream rows, as each database wrote them</summary>
@@ -345,8 +386,8 @@
           <dt>Formula</dt><dd>${esc(ch.f) || "&mdash;"}</dd>
           <dt>Class</dt><dd>${ch.mc ? `<span class="chip">${esc(ch.mc)}</span>` : "&mdash;"}
             ${ch.sc ? `<div style="color:var(--muted);font-size:12px">HMDB: ${esc(ch.sc)}${ch.cl ? " / " + esc(ch.cl) : ""}</div>` : ""}
-            ${ch.cc ? `<div style="color:var(--muted);font-size:12px">ChEBI: ${esc(ch.cc)}</div>` : ""}</dd>
-          ${ch.sm ? `<dt>SMILES</dt><dd class="smiles">${esc(ch.sm)}</dd>` : ""}
+            ${ch.cc ? `<div style="color:var(--muted);font-size:12px" title="MetaLigand's own grouping (KEGG-style). It lumps amino acids, amines and neurotransmitters under 'Peptides'; it is not a ChEBI class and not the chemical class used elsewhere on this site.">MetaLigand group: ${esc(ch.cc)}</div>` : ""}</dd>
+          ${ch.sm ? `<dt title="SMILES is a one-line text code for a molecule's structure: letters are atoms, brackets and digits show branches and rings. Software can redraw the structure from it.">SMILES <span style="color:var(--muted)" title="A one-line text code for the molecule's structure (atoms and bonds); software can redraw the structure from it.">(?)</span></dt><dd class="smiles">${esc(ch.sm)}</dd>` : ""}
           ${ch.syn && ch.syn.length ? `<dt>Also known as</dt><dd style="font-size:12.5px;color:var(--muted)">${esc(ch.syn.slice(0, 8).join(", "))}</dd>` : ""}
         </dl>
 
@@ -354,7 +395,7 @@
         ${enzPanel(r[1])}
 
         ${classPanel(id)}
-        ${evidencePanel(id)}
+        ${evidencePanel(id, r)}
 
         <h3 style="margin:22px 0 8px;font-size:15px">Reported by</h3>
         ${provHtml}
@@ -399,7 +440,7 @@
         <td class="mono" style="font-size:12px">${esc(c.f) || "&mdash;"}</td>
         <td>${c.mc ? `<span class="chip">${esc(c.mc)}</span>` : ""}</td>
         <td>${recCount[id] || 0}</td>
-        <td>${(E[id] || []).length || '<span class="unassessed" title="not inferable from expression">0</span>'}</td>
+        <td>${new Set((E[id] || []).map(x => x[0])).size || '<span class="unassessed" title="not inferable from expression">0</span>'}</td>
         <td>${c.src.length}</td></tr>`).join("");
     document.getElementById("cpageinfo").textContent = `page ${cpage + 1} / ${pages}`;
     document.getElementById("cprev").disabled = cpage === 0;
@@ -414,8 +455,33 @@
       <span class="track"><i style="width:${(v / max * 100).toFixed(1)}%"></i></span>
       <span class="n">${v.toLocaleString()}</span></div>`).join("");
   }
+  const TRUST = [
+    ["GtoPdb (IUPHAR)", "Expert-curated pharmacology of receptors, with measured affinities", "Yes, per pair", "High: curated by receptor specialists; limited to well-studied drug targets"],
+    ["CellChatDB v2", "Curated ligand-receptor list for cell-cell communication", "Some", "Medium-high: manually curated, partly built from KEGG; pair-level evidence is thin"],
+    ["CellPhoneDB v5", "Curated ligand-receptor list, includes some non-protein ligands", "Rarely", "Medium-high: curated, but few citations per pair"],
+    ["MRCLinkdb", "Metabolite-receptor pairs collected from the literature", "Yes, per pair", "Medium: citations present, but some are off by a few ids and the file has no stated licence"],
+    ["MetaLigand", "Metabolite-ligand-receptor pairs, compiled from several databases", "No", "Low-medium: aggregation without citations; includes artefact-like pairs (for example glycerol with integrins)"],
+    ["MetalinksDB", "Metabolite-protein links, mostly from other resources", "No", "Low-medium: about 94% of its provenance is STITCH (text-mining/prediction), so treat single-source pairs as leads"],
+    ["ChEMBL", "Measured activities from medicinal-chemistry papers", "Yes, PubMed id", "High for 'binds/acts at' (Ki, Kd, EC50, IC50 up to 10 uM); species and assay vary"],
+    ["BindingDB", "Measured binding affinities, matched by chemical structure", "Yes, PubMed id", "High for affinity; matched on the structure skeleton, so close analogues can slip in"],
+    ["PDB", "3D structures that contain the molecule and a chain of the receptor", "Yes, primary paper", "Medium: shows co-occurrence in a structure, not that the molecule is the physiological ligand; common additives are excluded"],
+    ["UniProt / Rhea", "Curated protein annotations (binding sites, reactions, function text)", "Yes, experimental PubMed id", "High when the sentence is experimental; reactions describe transport or catalysis as well as binding"],
+    ["TCDB", "Transporter classification with substrates", "No", "Medium-high for transporters only"],
+    ["HGNC names", "Receptor named after the ligand (for example 'adenosine A1 receptor')", "No", "High: the name itself says it"]
+  ];
   function buildStats() {
     const m = S.manifest, single = S.by_nsrc["1"] || 0;
+    const bs = S.by_source || {}, SRCL = { gtopdb_interactions: "GtoPdb", cellchatdb_human: "CellChatDB v2",
+      mrclinkdb_human_mr: "MRCLinkdb", cellphonedb_interactions: "CellPhoneDB v5", metaligand_pairs_human: "MetaLigand",
+      metalinksdb: "MetalinksDB" };
+    const cmpMax = Math.max(S.n_inter, ...Object.values(bs).map(x => x.pairs), 1);
+    const cmpBar = (lab, tot, ver, strong) => `<div class="hbar">
+      <span class="lab"${strong ? ' style="color:var(--text,#111);font-weight:600"' : ""}>${esc(lab)}</span>
+      <span class="track" style="position:relative"><i style="width:${(tot / cmpMax * 100).toFixed(1)}%;opacity:.35"></i>
+        <i style="position:absolute;left:0;top:0;width:${(ver / cmpMax * 100).toFixed(1)}%;opacity:.9"></i></span>
+      <span class="n" style="width:120px">${tot.toLocaleString()} &middot; ${ver.toLocaleString()} verified</span></div>`;
+    const cmpRows = Object.entries(bs).map(([k, v]) => cmpBar(SRCL[k] || k, v.pairs, v.verified, false)).join("") +
+      cmpBar("This database", S.n_inter, S.n_verified || 0, true);
     document.getElementById("statbody").innerHTML = `
       <div class="stat-grid">
         <div class="stat"><b>${S.n_inter.toLocaleString()}</b><span>chemical–receptor pairs</span></div>
@@ -423,13 +489,29 @@
         <div class="stat"><b>${(S.n_verified || 0).toLocaleString()}</b><span>verified pairs</span></div>
       </div>
       <div class="panel" style="margin-bottom:16px">
-        <h3 style="margin:0 0 8px;font-size:15px">Confirmed evidence by what it says</h3>
-        <p style="color:var(--muted);font-size:12.5px;margin:0 0 10px">
-          ${(S.n_evidence || 0)} papers over ${(S.n_pairs_with_evidence || 0)} pairs, from 435 pairs
-          searched. Machine-verified against each paper's own text, not curator-read. The
-          ${(S.by_result || {}).REFUTES || 0} refutations are pairs an upstream source asserts and the
-          literature contradicts.</p>
-        ${bars(S.by_result || {})}
+        <h3 style="margin:0 0 8px;font-size:15px">Pairs in each resource, and how many we verified</h3>
+        <p style="color:var(--muted);font-size:12.5px;margin:0 0 10px">Number of chemical&ndash;receptor pairs each
+          upstream resource lists (light bar), and how many of those pairs this database could verify
+          (dark part). The last row is this database: every pair it holds, and the pairs it
+          verified (literature with a checked quote, or a curated-database record).</p>
+        ${cmpRows}
+      </div>
+      <div class="panel" style="margin-bottom:16px">
+        <h3 style="margin:0 0 8px;font-size:15px">Database evidence behind verified pairs</h3>
+        <p style="color:var(--muted);font-size:12.5px;margin:0 0 10px">${(S.n_lit_verified || 0).toLocaleString()} pairs
+          are verified by a quoted sentence from a paper; the database records below verify further pairs
+          (a pair can appear under several). These are measured activities or structures recorded by the
+          database, not quoted sentences.</p>
+        ${bars(S.by_dbsource || {})}
+      </div>
+      <div class="panel" style="margin-bottom:16px">
+        <h3 style="margin:0 0 8px;font-size:15px">Where the data comes from, and how far to trust it</h3>
+        <table class="trust"><thead><tr><th>Source</th><th>What it is</th><th>Cites papers?</th><th>How much to trust it</th></tr></thead><tbody>
+          ${TRUST.map(t => `<tr><td><b>${esc(t[0])}</b></td><td>${esc(t[1])}</td><td>${esc(t[2])}</td><td>${esc(t[3])}</td></tr>`).join("")}
+        </tbody></table>
+        <p style="color:var(--muted);font-size:12px;margin:10px 0 0">Trust notes are this project's own assessment.
+          A pair listed by only one text-mined or prediction-based resource is a lead, not a fact; it
+          becomes <i>verified</i> here only when a paper's own sentence or a curated database record backs it.</p>
       </div>
       <div class="panel" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px;font-size:15px">How many sources agree</h3>
@@ -458,8 +540,50 @@
   /* ---------------- methods ---------------- */
   function buildMethods() {
     const m = S.manifest;
+    const tbl = (head, rows) => `<table class="trust"><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${
+      rows.map(r => `<tr>${r.map(x => `<td>${x}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
     document.getElementById("methodsbody").innerHTML = `
-      <h3 style="margin-top:0">What this is</h3>
+      <h3 style="margin-top:0">1. Databases the pairs were aggregated from</h3>
+      <p>Every chemical&ndash;receptor pair in the table comes from at least one of these. They decide
+      <i>which pairs exist</i> here; listing a pair does not make it verified.</p>
+      ${tbl(["Database", "What it contributes", "Pairs"], [
+        ["GtoPdb (IUPHAR/BPS Guide to Pharmacology)", "Expert-curated receptor pharmacology with affinities and citations", (S.by_source || {}).gtopdb_interactions?.pairs ?? ""],
+        ["CellChatDB v2", "Curated ligand&ndash;receptor list for cell&ndash;cell communication (non-protein ligands)", (S.by_source || {}).cellchatdb_human?.pairs ?? ""],
+        ["CellPhoneDB v5", "Curated ligand&ndash;receptor list, non-protein ligands only here", (S.by_source || {}).cellphonedb_interactions?.pairs ?? ""],
+        ["MRCLinkdb", "Metabolite&ndash;receptor pairs from the literature, with PubMed ids", (S.by_source || {}).mrclinkdb_human_mr?.pairs ?? ""],
+        ["MetaLigand", "Metabolite ligand&ndash;receptor pairs compiled from other databases", (S.by_source || {}).metaligand_pairs_human?.pairs ?? ""],
+        ["MetalinksDB", "Metabolite&ndash;protein links, largely from STITCH", (S.by_source || {}).metalinksdb?.pairs ?? ""],
+        ["MEBOCOST", "Metabolite&ndash;sensor pairs; used internally only, never shown or exported (licence)", "&mdash;"]])}
+      <p style="color:var(--muted);font-size:12.5px">The genes for each ligand (synthesis, transport, degradation)
+      come from MetalinksDB, MetaLigand, MRCLinkdb, CellChatDB and CellPhoneDB, with gene symbols brought to the
+      current HGNC names.</p>
+
+      <h3>2. Databases and literature used to verify pairs</h3>
+      <p>A pair is <b>verified</b> when one of these backs it independently of the list it came from.</p>
+      ${tbl(["Source", "What counts as evidence", "Pairs it verifies"], [
+        ["Primary papers (PubMed, Europe PMC, PMC full text, publisher pages)", "A sentence from the paper's own Results or Discussion, quoted word for word, naming this molecule and this receptor", (S.n_lit_verified || 0).toLocaleString()],
+        ...Object.entries(S.by_dbsource || {}).map(([k, v]) => [esc(k), ({
+          ChEMBL: "A measured activity (Ki, Kd, IC50, EC50 at 10 &micro;M or stronger) on the human protein, with a PubMed id",
+          BindingDB: "A measured binding affinity for the same chemical structure on this protein",
+          GtoPdb: "An expert-curated interaction record (agonist, antagonist, affinity)",
+          PDB: "A 3D structure containing the molecule and a chain of the receptor (common additives excluded)",
+          UniProt: "A curated binding-site or function annotation with an experimental PubMed id",
+          "UniProt (Rhea)": "A curated reaction (transport or catalysis) involving the molecule",
+          TCDB: "A transporter substrate annotation",
+          "HGNC approved name": "The receptor is officially named after the molecule"
+        })[k] || "", v.toLocaleString()])])}
+      <p style="color:var(--muted);font-size:12.5px">A pair can be verified by several of these at once.</p>
+
+      <h3>3. What "verified" means here</h3>
+      <ul>
+        <li><b>Verified</b>: at least one quoted sentence from a primary paper, or at least one curated database record from section 2.</li>
+        <li><b>Not verified</b>: only the aggregated lists in section 1 assert the pair. Treat it as a lead.</li>
+        <li>A paper that was read but does not test the pair is <i>not</i> counted as evidence against it. Only a paper that tested
+          this exact pair and found nothing counts as a refutation.</li>
+        <li>Quoted sentences were checked mechanically against the paper's own text; they were not read by a person.</li>
+      </ul>
+
+      <h3>What this is</h3>
       <p>Seven existing databases describe interactions between small molecules —
       metabolites, neurotransmitters, steroids, lipids — and the proteins that receive them.
       Each uses its own names, its own identifiers and its own table layout. This resource
@@ -607,6 +731,7 @@
     th.classList.add("sorted"); if (sortAsc) th.classList.add("asc");
     apply();
   });
+  document.getElementById("dlcsv").onclick = downloadChemCSV;
   document.getElementById("prev").onclick = () => { page--; render(); };
   document.getElementById("next").onclick = () => { page++; render(); };
   document.getElementById("cprev").onclick = () => { cpage--; crender(); };
