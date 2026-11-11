@@ -91,6 +91,13 @@
         <li><b>Degradation</b>: genes that break the ligand down or inactivate it.</li>
       </ul>
 
+      <h3>Which genes to use</h3>
+      <p style="font-size:13.5px">The gene lists on this site come from the raw sources (the Human-GEM metabolic model
+      and Rhea/UniProt reactions, directed reactions only), so the roles below can be used as given. Faded genes, shown
+      only for chemicals the raw sources do not cover, are not confirmed: use them with care. <b>Cofactor hubs</b>
+      (ATP, ADP, phosphate, NAD and similar) have no gene list: hundreds of enzymes make or use them, so no gene set
+      can stand in for where they are released as signals.</p>
+
       <h3>The formula</h3>
       <pre class="mono" style="background:var(--chip);padding:12px;border-radius:6px;overflow-x:auto;font-size:12.5px;line-height:1.7">1  Production
      S_D = sqrt( mean(synthesis) x mean(precursor) )

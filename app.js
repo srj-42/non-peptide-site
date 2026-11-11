@@ -20,7 +20,8 @@
     cellphonedb_interactions: "CellPhoneDB v5",
     metaligand_pairs_human: "MetaLigand",
     metalinksdb: "MetalinksDB",
-    metaligand_ligands_human: "MetaLigand", mrclinkdb_human_enzyme: "MRCLinkdb", mrclinkdb_human_transporter: "MRCLinkdb"
+    metaligand_ligands_human: "MetaLigand", mrclinkdb_human_enzyme: "MRCLinkdb", mrclinkdb_human_transporter: "MRCLinkdb",
+    human_gem: "Human-GEM v2.1.1", rhea_uniprot: "Rhea/UniProt"
   };
   /* Sources that carry a per-pair citation. Used only to colour the provenance
      strip - it is a provenance cue, never a score. */
@@ -260,20 +261,79 @@
     channel: "Ion channel subunit.",
     other: "None of the above in HGNC's records (for example binding proteins and regulators)."
   };
+  /* Root-source check (np22): does Human-GEM / Rhea / TCDB / HMDB back this gene in this role? */
+  const RSRC = { G: "Human-GEM", R: "Rhea/UniProt", T: "TCDB", H: "HMDB", X: "Reactome", O: "GO (experimental)" };
+  const OPP = { efflux: "influx", influx: "efflux" };
+  function rootMark(cid, g, role) {
+    const rr = ((window.GENEROOT || {})[cid] || {})[g] || [];
+    const gr = rr.filter(x => /[GR]/.test(x[1]));          /* Human-GEM / Rhea: may set direction */
+    const go = rr.filter(x => /O/.test(x[1]));             /* GO: supports, never sets direction */
+    const names = x => [...x[1]].map(k => RSRC[k]).join(", ");
+    const mk = (sym, col, tip) => `<span class="rmk" style="color:${col};font-weight:700;margin-left:3px" title="${esc(tip)}">${sym}</span>`;
+    if (role === "precursor_synthesis") return mk("–", "var(--muted)", "Precursor genes are not checked against root sources on the site");
+    let hit = gr.find(x => x[0] === role && x[2]);
+    if (hit) return mk("✓", "#2e7d32", "Root agrees: " + names(hit) + " has a reaction with this gene in this role");
+    /* a directed reaction in the opposite direction outranks an undirected match */
+    if (OPP[role] && gr.find(x => x[0] === OPP[role] && x[2])) return mk("⇄", "#c62828", "Root says the OPPOSITE direction: " + OPP[role]);
+    hit = gr.find(x => x[0] === role);
+    if (hit) return mk("≈", "#8d6e00", "Root agrees only through a reversible or undirected reaction (" + names(hit) + ")");
+    if (OPP[role] && rr.find(x => x[0] === "transport")) return mk("≈", "#8d6e00", "TCDB lists this gene as a transporter of the molecule (no direction)");
+    if (go.find(x => x[0] === role || (OPP[role] && x[0] === "transport"))) return mk("✓", "#2e7d32", "GO (experimental evidence) links this gene to the molecule in this role; GO does not set a direction");
+    if (gr.length) return mk("≠", "#c62828", "Root lists this gene in another role: " + [...new Set(gr.map(x => x[0]))].join(", "));
+    if (go.length) return mk("≠", "#c62828", "GO (experimental) links this gene to the molecule in another role: " + [...new Set(go.map(x => x[0]))].join(", "));
+    if (rr.find(x => /X/.test(x[1]))) return mk("◇", "#1565c0", "Reactome: gene and molecule take part in the same curated reaction (role not stated)");
+    if (rr.find(x => /H/.test(x[1]))) return mk("○", "var(--muted)", "UNSUPPORTED: only HMDB links this gene and molecule (no role given)");
+    return mk("·", "var(--muted)", "UNSUPPORTED: no source (Human-GEM, Rhea, Reactome, GO, TCDB, HMDB) links this gene to the molecule");
+  }
+  function rootOnly(cid, byRole) {
+    const R = (window.GENEROOT || {})[cid] || {}, GI = window.GENEINFO || {};
+    const add = {};
+    Object.entries(R).forEach(([g, rr]) => rr.forEach(([role, m, dir]) => {
+      if (!["synthesis", "degradation", "efflux", "influx"].includes(role) || !/[GR]/.test(m) || !dir) return;
+      if (byRole[role] && byRole[role][g]) return;
+      (add[role] = add[role] || {})[g] = m;
+    }));
+    const n = Object.values(add).reduce((t, o) => t + Object.keys(o).length, 0);
+    if (!n) return "";
+    return `<details style="margin-top:8px"><summary style="font-size:12.5px">Root sources name ${n} more gene${n === 1 ? "" : "s"} that no aggregated resource lists</summary>` +
+      ["synthesis", "efflux", "influx", "degradation"].filter(r => add[r]).map(role =>
+        `<div style="margin:6px 0"><div style="font-size:12px;color:var(--muted)">${esc(role)} · ${Object.keys(add[role]).length}</div>` +
+        Object.entries(add[role]).sort().map(([g, m]) =>
+          `<span class="pill" style="opacity:.75" title="${esc((GI[g] || ["", ""])[1] + " — from " + [...m].map(k => RSRC[k]).join(", "))}">${esc(g)}</span>`).join("") + `</div>`).join("") +
+      `</details>`;
+  }
+
   function enzPanel(cid) {
     const rows = E[cid] || [], GI = window.GENEINFO || {};
+    if (!rows.length && (window.HUBS || []).includes(cid)) return `<p style="font-size:12.5px;padding:6px 8px;border-left:3px solid #8d6e00;background:var(--chip)">
+      <b>Cofactor hub: no genes listed.</b> This molecule is made or used by hundreds of enzymes across metabolism, so no gene
+      set can stand in for where it is released as a signal. Its availability cannot be estimated from expression data.</p>`;
     if (!rows.length) return `<p style="color:var(--muted)">No genes recorded. This chemical
       <b>cannot be inferred from transcriptomic data</b> — there is no gene whose expression
-      stands in for it.</p>`;
+      stands in for it.</p>` + rootOnly(cid, {});
     const byRole = {};
-    rows.forEach(([g, role, src, dk]) => {
+    rows.forEach(([g, role, src, dk, also, origin]) => {
       (byRole[role] = byRole[role] || {});
-      (byRole[role][g] = byRole[role][g] || { srcs: new Set(), dk: dk });
+      (byRole[role][g] = byRole[role][g] || { srcs: new Set(), dk: dk, also: new Set(), fb: origin === "lr_fallback" });
       byRole[role][g].srcs.add(src);
+      (also || "").split("|").filter(Boolean).forEach(x => byRole[role][g].also.add(SRC_LABEL[x] || x));
     });
+    const anyFb = rows.some(r => r[5] === "lr_fallback");
     const order = ["precursor_synthesis", "synthesis", "efflux", "influx", "degradation"];
-    return `<p style="color:var(--muted);font-size:12px;margin:0 0 4px">Within each role, genes are ordered by how many
-      source databases list them for this chemical (the number on each gene); the tag says what kind of protein it is.</p>` +
+    const isHub = (window.HUBS || []).includes(cid);
+    const nGenes = new Set(rows.map(r => r[0])).size;
+    return (isHub ? `<p style="font-size:12.5px;margin:4px 0 6px;padding:6px 8px;border-left:3px solid #8d6e00;background:var(--chip)">
+      <b>Cofactor hub.</b> This molecule is used or made by hundreds of enzymes across metabolism, so these genes say nothing about
+      where it is released as a signal. Do not use them as an expression proxy for its availability.</p>
+      <details><summary style="font-size:12.5px">Show all ${nGenes} genes</summary>` : "") +
+      `<p style="color:var(--muted);font-size:12px;margin:0 0 4px">Within each role, genes are ordered by how many
+      raw sources give them (the number on each gene: Human-GEM and/or Rhea); the tag says what kind of protein it is.
+      Genes come from the raw sources themselves, the Human-GEM metabolic model and Rhea/UniProt reactions, using only
+      reactions with a stated direction; hover a gene to see which ligand&ndash;receptor resources also list it.</p>` +
+      (anyFb ? `<p style="font-size:12.5px;margin:4px 0 6px;padding:6px 8px;border-left:3px solid var(--muted);background:var(--chip)">
+      No raw source gives genes for this chemical, so the genes listed by ligand&ndash;receptor resources are shown instead.
+      They are <b>not confirmed</b> by Human-GEM or Rhea (faded).</p>` : "") +
+
       order.filter(r => byRole[r]).map(role => {
       const genes = Object.entries(byRole[role]).sort((a, b) => b[1].srcs.size - a[1].srcs.size || (a[0] < b[0] ? -1 : 1));
       return `<div style="margin:8px 0">
@@ -281,9 +341,10 @@
           ${esc(role.replace("_", " "))} · ${genes.length} gene${genes.length === 1 ? "" : "s"}</div>
         <div style="margin-top:4px">${genes.map(([g, v]) => {
           const gi = GI[g] || ["other", ""], t = gi[0];
-          return `<span class="pill ${ROLE_CLASS[role] || ""}" title="${esc((gi[1] ? gi[1] + " — " : "") + "listed by " + [...v.srcs].map(s => SRC_LABEL[s] || s).join(", "))}${v.dk ? "" : " — direction not stated by the source"}">${esc(g)}${v.dk ? "" : "?"}<sup class="gcount">${v.srcs.size}</sup><span class="gtype gt-${t}" title="${esc(GT_HELP[t])}">${esc(GT_LABEL[t])}</span></span>`;
+          const rm = v.fb ? rootMark(cid, g, role) : "", weak = v.fb;
+          return `<span class="pill ${ROLE_CLASS[role] || ""}"${weak ? ' style="opacity:.5"' : ""} title="${esc((gi[1] ? gi[1] + " — " : "") + (v.fb ? "listed by " : "from ") + [...v.srcs].map(s => SRC_LABEL[s] || s).join(", ") + (v.also.size && !v.fb ? "; also listed by " + [...v.also].join(", ") : ""))}${v.dk ? "" : " — direction not stated by the source"}">${esc(g)}${v.dk ? "" : "?"}<sup class="gcount">${v.srcs.size}</sup><span class="gtype gt-${t}" title="${esc(GT_HELP[t])}">${esc(GT_LABEL[t])}</span>${rm}</span>`;
         }).join("")}</div></div>`;
-    }).join("");
+    }).join("") + rootOnly(cid, byRole) + (isHub ? "</details>" : "");
   }
 
   /* ---------------- confirmed evidence panel ----------------
@@ -319,6 +380,51 @@
       </div>`).join("") +
       `<p style="color:var(--muted);font-size:12px;margin:8px 0 0">Quoted sentence verified verbatim
        against the paper's own text by the load gates; confirmed without a curator read.</p>`;
+  }
+
+  /* HMDB context for the molecule (not for the pair): where it is found, in what
+     sample, in which cell compartment, and which diseases HMDB links it to. */
+  const ctxChips = a => a.map(v => `<span class="chip">${esc(v)}</span>`).join(" ");
+  function ctxList(label, a, tip) {
+    if (!a || !a.length) return "";
+    const shown = a.length > 12
+      ? ctxChips(a.slice(0, 12)) + ` <details style="display:inline"><summary>+${a.length - 12} more</summary>${ctxChips(a.slice(12))}</details>`
+      : ctxChips(a);
+    return `<dt title="${esc(tip)}">${label}</dt><dd style="line-height:1.9">${shown}</dd>`;
+  }
+  const uniq = a => a && [...new Set(a)];
+  const DRUGPW = /\bAction\b/i;   /* SMPDB names drug-action pathways "<Drug> Action Pathway" */
+  function pathRows(x) {
+    const p = x.p;
+    if (!p || !p.length) return "";
+    const own = p.filter(n => !DRUGPW.test(n)), drug = p.filter(n => DRUGPW.test(n));
+    const more = (a, label) => a.length
+      ? ` <details style="display:inline"><summary>${label}</summary>${ctxChips(a)}</details>` : "";
+    const head = own.slice(0, 10), rest = own.slice(10);
+    return `<dt title="Pathways in HMDB / SMPDB that list this metabolite as a substrate, product, cofactor or other participant. A pathway listing does not mean the molecule signals through it.">Pathways</dt>
+      <dd style="line-height:1.9">${head.length ? ctxChips(head) : '<span style="color:var(--muted);font-size:12.5px">none besides drug-action pathways</span>'}
+        ${more(rest, "+" + rest.length + " more")}
+        ${more(drug, drug.length + " drug-action pathway" + (drug.length === 1 ? "" : "s"))}
+        <div style="color:var(--muted);font-size:12px">HMDB / SMPDB. Lipid-species variants of one pathway are merged.</div></dd>`;
+  }
+  function roleRows(x) {
+    const l = x.l;
+    if (!l) return "";
+    return Object.keys(l).sort().map(g => ctxList(g, uniq(l[g]),
+      "HMDB ontology: " + g)).join("");
+  }
+  function ctxRows(ch) {
+    const x = ch.x;
+    if (!x) return `<dt>Found in</dt><dd style="color:var(--muted);font-size:12.5px">No tissue, location or disease annotation in HMDB for this chemical.</dd>`;
+    return ctxList("Tissues", x.t, "Tissues in which HMDB reports this metabolite") +
+      ctxList("Biospecimens", x.b, "Body fluids or samples in which HMDB reports it") +
+      ctxList("Cell location", x.c, "Cellular compartments HMDB lists for it") +
+      ctxList("Diseases", x.d, "Diseases HMDB links to altered levels of this metabolite") +
+      pathRows(x) +
+      ctxList("Origin", uniq(x.s), "Where HMDB says the molecule comes from: made by the body (endogenous), food, microbes, plants, synthetic and so on") +
+      ctxList("Route of exposure", uniq(x.r), "How HMDB says the body is exposed to it") +
+      roleRows(x) +
+      `<dt></dt><dd style="color:var(--muted);font-size:12px">From HMDB 5.0. These describe the molecule, not this ligand&ndash;receptor pair, and are not evidence for it.</dd>`;
   }
 
   function openDetail(id) {
@@ -388,8 +494,11 @@
             ${ch.sc ? `<div style="color:var(--muted);font-size:12px">HMDB: ${esc(ch.sc)}${ch.cl ? " / " + esc(ch.cl) : ""}</div>` : ""}
             ${ch.cc ? `<div style="color:var(--muted);font-size:12px" title="MetaLigand's own grouping (KEGG-style). It lumps amino acids, amines and neurotransmitters under 'Peptides'; it is not a ChEBI class and not the chemical class used elsewhere on this site.">MetaLigand group: ${esc(ch.cc)}</div>` : ""}</dd>
           ${ch.sm ? `<dt title="SMILES is a one-line text code for a molecule's structure: letters are atoms, brackets and digits show branches and rings. Software can redraw the structure from it.">SMILES</dt><dd class="smiles">${esc(ch.sm)}</dd>` : ""}
+          ${ctxRows(ch)}
           ${ch.syn && ch.syn.length ? `<dt>Also known as</dt><dd style="font-size:12.5px;color:var(--muted)">${esc(ch.syn.slice(0, 8).join(", "))}</dd>` : ""}
         </dl>
+
+        <dl class="kv">${window.geneSection("Receptor gene links", [r[3]], "any")}</dl>
 
         <h3 style="margin:0 0 6px;font-size:15px">Related genes for the ligand (${esc(r[2])})</h3>
         ${enzPanel(r[1])}
@@ -424,6 +533,19 @@
       if (only === "noenz" && hasEnz(id)) return false;
       if (only === "nt" && !c.nt) return false;
       if (only === "prov" && !c.pv) return false;
+      const x = c.x || {};
+      const ft = document.getElementById("ctissue").value,
+            fb = document.getElementById("cbio").value,
+            fd = document.getElementById("cdis").value.trim().toLowerCase();
+      if (ft && !(x.t || []).includes(ft)) return false;
+      if (fb && !(x.b || []).includes(fb)) return false;
+      if (fd && !(x.d || []).some(v => v.toLowerCase().includes(fd))) return false;
+      const fp = document.getElementById("cpath").value.trim().toLowerCase(),
+            fo = document.getElementById("corigin").value,
+            fr = document.getElementById("crole").value;
+      if (fp && !(x.p || []).some(v => v.toLowerCase().includes(fp))) return false;
+      if (fo && !(x.s || []).includes(fo)) return false;
+      if (fr && !Object.values(x.l || {}).some(a => a.includes(fr))) return false;
       return true;
     }).sort((a, b) => (recCount[b[0]] || 0) - (recCount[a[0]] || 0));
     cpage = 0; crender();
@@ -540,9 +662,12 @@
         ["MetaLigand", "Metabolite ligand&ndash;receptor pairs compiled from other databases", (S.by_source || {}).metaligand_pairs_human?.pairs ?? ""],
         ["MetalinksDB", "Metabolite&ndash;protein links, largely from STITCH", (S.by_source || {}).metalinksdb?.pairs ?? ""],
         ["MEBOCOST", "Metabolite&ndash;sensor pairs; used internally only, never shown or exported (licence)", "&mdash;"]])}
-      <p style="color:var(--muted);font-size:12.5px">The genes for each ligand (synthesis, transport, degradation)
-      come from MetalinksDB, MetaLigand, MRCLinkdb, CellChatDB and CellPhoneDB, with gene symbols brought to the
-      current HGNC names.</p>
+      <p style="color:var(--muted);font-size:12.5px">The genes for each ligand (synthesis, precursor synthesis, export,
+      uptake, breakdown) are taken from the raw sources rather than from the ligand&ndash;receptor resources: the
+      Human-GEM metabolic model (v2.1.1) and Rhea reactions as annotated in UniProt, using only reactions with a stated
+      direction. For the few chemicals these sources do not cover, the genes listed by MetalinksDB, MetaLigand or MRCLinkdb
+      are shown instead and marked as not confirmed. Cofactors such as ATP, ADP, phosphate and NAD get no gene set: hundreds
+      of enzymes make or use them. Gene symbols are current HGNC names.</p>
 
       <h3>2. Databases and literature used to verify pairs</h3>
       <p>A pair is <b>verified</b> when one of these backs it independently of the list it came from.</p>
@@ -580,6 +705,18 @@
     document.getElementById("assay").insertAdjacentHTML("beforeend",
       Object.keys(ASSAY_LABEL).filter(k => perClass[k]).map(k =>
         `<option value="${k}">${esc(ASSAY_LABEL[k])} (${perClass[k]})</option>`).join(""));
+    const tally = k => { const t = {}; Object.values(C).forEach(c => ((c.x || {})[k] || []).forEach(v => { t[v] = (t[v] || 0) + 1; }));
+      return Object.entries(t).sort((p, q) => q[1] - p[1] || p[0].localeCompare(q[0])); };
+    const tallyRole = () => { const t = {}; Object.values(C).forEach(c => Object.values((c.x || {}).l || {})
+      .forEach(a => new Set(a).forEach(v => { t[v] = (t[v] || 0) + 1; })));
+      return Object.entries(t).sort((p, q) => q[1] - p[1] || p[0].localeCompare(q[0])); };
+    document.getElementById("corigin").insertAdjacentHTML("beforeend",
+      tally("s").map(([v, n]) => `<option value="${esc(v)}">${esc(v)} (${n})</option>`).join(""));
+    document.getElementById("crole").insertAdjacentHTML("beforeend",
+      tallyRole().map(([v, n]) => `<option value="${esc(v)}">${esc(v)} (${n})</option>`).join(""));
+    [["ctissue", "t"], ["cbio", "b"]].forEach(([id, k]) =>
+      document.getElementById(id).insertAdjacentHTML("beforeend",
+        tally(k).map(([v, n]) => `<option value="${esc(v)}">${esc(v)} (${n})</option>`).join("")));
     const rts = [...new Set(I.map(r => r[4]).filter(Boolean))].sort();
     document.getElementById("rtype").insertAdjacentHTML("beforeend",
       rts.map(c => `<option>${esc(c)}</option>`).join(""));
@@ -597,8 +734,8 @@
     const el = document.getElementById(id);
     el.addEventListener(id === "q" ? "input" : "change", apply);
   });
-  ["cq", "conly"].forEach(id => document.getElementById(id)
-    .addEventListener(id === "cq" ? "input" : "change", capply));
+  ["cq", "conly", "ctissue", "cbio", "cdis", "cpath", "corigin", "crole"].forEach(id => document.getElementById(id)
+    .addEventListener(id === "cq" || id === "cdis" || id === "cpath" ? "input" : "change", capply));
   document.querySelectorAll("th[data-s]").forEach(th => th.onclick = () => {
     const c = +th.dataset.s;
     if (c === sortCol) sortAsc = !sortAsc; else { sortCol = c; sortAsc = false; }

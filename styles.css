@@ -95,6 +95,24 @@ blockquote{margin:8px 0 0;padding:9px 12px;background:#fafaf8;border-left:2px so
 
 .unassessed{color:#6b6b66;font-size:12px;font-style:italic;border-bottom:1px dotted #c9c9c2;
   cursor:help}
+.cmpkey{display:flex;gap:18px;font-size:12px;color:var(--muted);margin-top:8px}
+.cmpkey i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+table.trust{border-collapse:collapse;width:100%;font-size:12.5px}
+table.trust th,table.trust td{border-bottom:1px solid var(--line,#e5e5e0);padding:6px 8px;text-align:left;vertical-align:top}
+table.trust th{color:var(--muted);font-weight:600}
+.dbmap{display:block;margin-top:2px;font-size:12px;color:var(--accent)}
+/* evidence summary at the bottom of the pair drawer (work/falcon_scale) */
+.summary{border:1px solid var(--line);border-radius:7px;padding:12px 14px;margin-bottom:10px;background:#fafaf8}
+.summary .headline{margin:0 0 8px;font-weight:600}
+.summary .kv{margin:0}
+.summary .note{color:#6b6b66;font-size:12px;margin:10px 0 0}
+.summary .ref{margin:0 0 8px}
+.summary .refnote{color:#6b6b66;font-size:12.5px;margin:1px 0 0}
+
+/* gene link-out cards in the drawer */
+.gcard { font-size: 12.5px; line-height: 1.6; margin: 0 0 8px; padding: 6px 8px; border: 1px solid var(--line, #e4e2db); border-radius: 6px; }
+.gcard .gk { display: inline-block; min-width: 92px; color: var(--muted, #6b6b66); }
+.gcard .gsp { color: var(--muted, #6b6b66); font-size: 11.5px; margin-left: 4px; }
 
 /* --- chemical-half additions ------------------------------------------- */
 .prov.chem{background:#4c1d95;}

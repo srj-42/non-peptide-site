@@ -76,6 +76,12 @@
         <option value="nt">neurotransmitters</option>
         <option value="prov">provisional identity</option>
       </select></div>
+      <div class="f"><label>Tissue (HMDB)</label><select id="ctissue"><option value="">any</option></select></div>
+      <div class="f"><label>Biospecimen (HMDB)</label><select id="cbio"><option value="">any</option></select></div>
+      <div class="f"><label>Disease (HMDB)</label><input type="search" id="cdis" placeholder="e.g. diabetes"></div>
+      <div class="f"><label>Pathway (HMDB)</label><input type="search" id="cpath" placeholder="e.g. tyrosine"></div>
+      <div class="f"><label>Origin (HMDB)</label><select id="corigin"><option value="">any</option></select></div>
+      <div class="f"><label>Role (HMDB)</label><select id="crole"><option value="">any</option></select></div>
       <div class="count" id="ccount"></div>
     </div>
     <div style="overflow-x:auto">
@@ -108,6 +114,8 @@
 <script src="data/chemicals.js"></script>
 <script src="data/enzymes.js"></script>
 <script src="data/interactions.js"></script>
+<script src="data/genes.js"></script>
+<script src="genelinks.js"></script>
 <script src="data/evidence.js"></script>
 <script src="data/classev.js"></script>
 <script src="app.js"></script>
