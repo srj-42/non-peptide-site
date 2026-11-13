@@ -1,11 +1,13 @@
 /* Usage tab: how the five enzyme/transporter roles can be turned into an
    estimate of how available a ligand is in a cell type or sample.
 
-   The formulation is OURS, adapted from two published ones:
-     MetaLigand (Cell Rep Methods 2025, PMID 41175863): de novo / salvage synthesis,
-       efflux, receptor, combined with square roots of means.
-     MRCLinkdb (BMC Biol 2024, PMID 38978014): producers minus consumers.
-   Neither paper publishes this exact combination; it is not validated. */
+   The formulation is MetaLigand's (Cell Rep Methods 2025, PMID 41175863): de novo and
+   salvage synthesis, efflux and receptor, combined with square roots of means (the genes of
+   one role are averaged, the sequential steps are multiplied under a square root).
+   Degradation genes are NOT used: subtracting them (an earlier version of this tab, after
+   MRCLinkdb's producers-minus-consumers idea) lowered the ranking of known producer tissues
+   and cell types in our benchmark (formula_benchmark/RESULTS.md). The formula is not
+   validated against measured concentrations. */
 (function () {
   "use strict";
   const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
@@ -18,8 +20,8 @@
      one value per gene in that role. Returns every intermediate so the page can show it. */
   function score(v) {
     const syn = mean(v.synthesis), pre = mean(v.precursor), inf = mean(v.influx),
-          deg = mean(v.degradation), eff = mean(v.efflux), rec = mean(v.receptor);
-    const r = { syn, pre, inf, deg, eff, rec, steps: [] };
+          eff = mean(v.efflux), rec = mean(v.receptor);
+    const r = { syn, pre, inf, eff, rec, steps: [] };
     if (syn == null) { r.error = "Needs at least one synthesis gene."; return r; }
     r.SD = pre != null ? Math.sqrt(syn * pre) : syn;
     r.steps.push(pre != null
@@ -31,15 +33,10 @@
     r.steps.push(r.SS != null
       ? `S = (S_D + S_S) / 2 = ${f3(r.S)}`
       : `S = S_D = ${f3(r.S)}   (no influx genes entered, so no salvage term)`);
-    const d = deg == null ? 0 : deg;
-    r.N = Math.max(0, r.S - d);
-    r.steps.push(deg != null
-      ? `N = max(0, S - mean(degradation)) = max(0, ${f3(r.S)} - ${f3(deg)}) = ${f3(r.N)}`
-      : `N = S = ${f3(r.N)}   (no degradation genes entered)`);
-    r.M = eff != null ? Math.sqrt(r.N * eff) : r.N;
+    r.M = eff != null ? Math.sqrt(r.S * eff) : r.S;
     r.steps.push(eff != null
-      ? `M = sqrt(N x mean(efflux)) = sqrt(${f3(r.N)} x ${f3(eff)}) = ${f3(r.M)}`
-      : `M = N = ${f3(r.M)}   (no efflux genes entered)`);
+      ? `M = sqrt(S x mean(efflux)) = sqrt(${f3(r.S)} x ${f3(eff)}) = ${f3(r.M)}`
+      : `M = S = ${f3(r.M)}   (no efflux genes entered)`);
     if (rec != null) {
       r.L = Math.sqrt(r.M * rec);
       r.steps.push(`Signal = sqrt(M x mean(receptor)) = sqrt(${f3(r.M)} x ${f3(rec)}) = ${f3(r.L)}`);
@@ -50,15 +47,15 @@
   const EXAMPLE = {
     names: {
       synthesis: "DDC", precursor: "TH", influx: "(none in the core set)",
-      degradation: "COMT, MAOA, MAOB", efflux: "SLC18A2, SLC6A3", receptor: "DRD2"
+      efflux: "SLC18A2, SLC6A3", receptor: "DRD2"
     },
     cells: {
       "Dopaminergic neuron (illustrative)": {
-        synthesis: [4.0], precursor: [3.6], influx: [], degradation: [1.5, 0.8, 1.0],
+        synthesis: [4.0], precursor: [3.6], influx: [],
         efflux: [3.0, 2.4], receptor: [2.5]
       },
       "Non-dopaminergic cell (illustrative)": {
-        synthesis: [3.0], precursor: [0.1], influx: [], degradation: [3.0, 2.5, 3.5],
+        synthesis: [3.0], precursor: [0.1], influx: [],
         efflux: [0.2, 0.0], receptor: [2.5]
       }
     }
@@ -88,7 +85,8 @@
         <li><b>Synthesis</b>: genes that make the ligand itself.</li>
         <li><b>Influx</b>: transporters that bring the ligand, or its precursor, into the cell to be reused.</li>
         <li><b>Efflux</b>: transporters that move the ligand out of the cell or load it into vesicles for release.</li>
-        <li><b>Degradation</b>: genes that break the ligand down or inactivate it.</li>
+        <li><b>Degradation</b>: genes that break the ligand down or inactivate it. Listed on this site,
+        but <b>not used</b> in the formula below (see the note after it).</li>
       </ul>
 
       <h3>Which genes to use</h3>
@@ -104,14 +102,22 @@
      S_S = sqrt( mean(synthesis) x mean(influx) )
      S   = (S_D + S_S) / 2
 
-2  Net of degradation
-     N   = max( 0 , S - mean(degradation) )
+2  Availability
+     M   = sqrt( S x mean(efflux) )
 
-3  Availability
-     M   = sqrt( N x mean(efflux) )
-
-4  Signal strength for one ligand-receptor pair
+3  Signal strength for one ligand-receptor pair
      Signal = sqrt( M x mean(receptor genes) )</pre>
+      <p style="font-size:13.5px">This is the formula of MetaLigand (Cell Reports Methods 2025). The genes of one
+      role are alternatives and are averaged; the steps that follow each other are multiplied under a square root,
+      so a missing step pulls the score down. If a role has no genes, its step is skipped: without precursor genes
+      S_D = mean(synthesis); without influx genes (no salvage route) S = S_D; without efflux genes M = S.
+      At least one synthesis gene is needed.</p>
+      <p style="font-size:13.5px"><b>Why degradation is not subtracted.</b> In a test of 15 formulas on the same gene
+      sets, ranking the known producer tissues and cell types of 37 and 44 ligands (Human Protein Atlas), this
+      formula scored a mean AUROC of 0.878 (tissues) and 0.858 (cell types), against 0.836 and 0.738 for the same
+      formula with degradation subtracted. Subtracting sets a producer to zero when its breakdown genes are also
+      high. The test shows where a ligand is made, not how much; it has not been checked against measured
+      concentrations.</p>
 
       <h3>Try your own numbers</h3>
       <p style="font-size:12.5px;color:var(--muted)">Enter normalised expression values for each
@@ -120,7 +126,6 @@
       ${box("synthesis", "Synthesis genes")}
       ${box("precursor", "Precursor synthesis genes")}
       ${box("influx", "Influx genes (salvage)")}
-      ${box("degradation", "Degradation genes")}
       ${box("efflux", "Efflux genes")}
       ${box("receptor", "Receptor genes")}
       <p><button id="uc-run">Calculate</button></p>
@@ -128,7 +133,7 @@
 
     const read = id => document.getElementById("uc-" + id).value
       .split(/[\s,;]+/).filter(Boolean).map(Number).filter(x => isFinite(x) && x >= 0);
-    const KEYS = ["synthesis", "precursor", "influx", "degradation", "efflux", "receptor"];
+    const KEYS = ["synthesis", "precursor", "influx", "efflux", "receptor"];
     const run = () => {
       const v = {}; KEYS.forEach(k => v[k] = read(k));
       document.getElementById("uc-out").innerHTML = stepsHtml(score(v));
